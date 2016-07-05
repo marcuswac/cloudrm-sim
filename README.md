@@ -49,5 +49,5 @@ scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes"
 
 
 For details, see paper:
-[Prediction-Based Admission Control for IaaS Clouds with Multiple Service](http://ieeexplore.ieee.org/xpls/abs_all.jsp?arnumber=7396141). CloudCom'2015.
+[Prediction-Based Admission Control for IaaS Clouds with Multiple Service Classes](http://ieeexplore.ieee.org/xpls/abs_all.jsp?arnumber=7396141). CloudCom'2015.
 
