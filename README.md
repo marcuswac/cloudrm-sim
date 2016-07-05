@@ -2,7 +2,7 @@
 
 Cloud resource management simulator
 
-# Download input files
+## Download input files
 
 In the root directory, run the script:
 
@@ -10,7 +10,7 @@ In the root directory, run the script:
 scripts/download_and_extract_input_data.sh
 ```
 
-# Admission control simulation 
+## Admission control simulation 
 
 Usage:
 
