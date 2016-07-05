@@ -20,7 +20,7 @@
 #   decisions. 
 #
 # Sample run:
-# ./run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes"
+# scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes"
 #
 # For details, see paper:
 # Prediction-Based Admission Control for IaaS Clouds with Multiple Service. CloudCom'2015.
