@@ -4,7 +4,7 @@ Cloud resource management simulator
 
 ## Dependencies
 
-- [*R*](ihttps://cran.r-project.org/) 3.2.x or higher.
+- [*R*](https://cran.r-project.org/) 3.2.x or higher.
 
 ## Setup environment
 
