@@ -2,12 +2,17 @@
 
 Cloud resource management simulator
 
-## Download input files
+## Dependencies
 
-In the root directory, run the script:
+- [*R*](ihttps://cran.r-project.org/) 3.2.x or higher.
+
+## Setup environment
+
+After having *R* installed, you need to download the input data, create the directory structure
+and install *R* packages. In order to do that, go the root directory and run this script:
 
 ```
-./download_and_extract_input_data.sh
+./download_input_and_setup.sh
 ```
 
 ## Admission control simulation 
