@@ -7,18 +7,18 @@ Cloud resource management simulator
 In the root directory, run the script:
 
 ```
-scripts/download_and_extract_input_data.sh
+./download_and_extract_input_data.sh
 ```
 
 ## Admission control simulation 
 
-Usage:
+To execute the admission control simulation, run this command from the root directiory:
 
 ``` 
 scripts/run_admission_control_sim.sh <method> <cpu_capacity_factor> <cpu_load_factor> <slo_scenario> <mem_capacity_factor> <mem_considered>"
 ```
 
-Input arguments:
+Input parameters:
  - method: name of the admission control method (greedy-norejection, greedy-quota,
    forecast-mean-quota, forecast-ets-quota)
 
@@ -41,7 +41,7 @@ Input arguments:
  - mem_considered: string ("yes" or "no") defining if memory is considered in admission control
    decisions.
 
-Sample run:
+Sample execution of a base scenario:
 
 ```
 scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes"
