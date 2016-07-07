@@ -20,7 +20,7 @@ and install *R* packages. In order to do that, go the root directory and run thi
 To execute the admission control simulation, run this command from the root directiory:
 
 ``` 
-scripts/run_admission_control_sim.sh <method> <cpu_capacity_factor> <cpu_load_factor> <slo_scenario> <mem_capacity_factor> <mem_considered>"
+scripts/run_admission_control_sim.sh <method> <cpu_capacity_factor> <cpu_load_factor> <mem_capacity_factor> <mem_load_factor> <slo_scenario> <mem_considered>"
 ```
 
 Input parameters:
@@ -33,6 +33,12 @@ Input parameters:
  - cpu_load_factor: decimal factor applied to the original cloud CPU load. A factor = 1 simulates
    the cloud with the same CPU load (requested resources) found in the traces.
 
+ - mem_capacity_factor: decimal factor applied to the original cloud memory capacity. A factor = 1 simulates
+   the cloud with the same memory capacity found in the traces.
+
+ - mem_load_factor: decimal factor applied to the original cloud memory load. A factor = 1 simulates
+   the cloud with the same memory load (requested resources) found in the traces.
+
  - slo_scenario: integer that identifies the availability SLO scenario. Possible values:
    - 1: medium
    - 2: very low
@@ -40,19 +46,14 @@ Input parameters:
    - 4: high
    - 5: very high
 
- - mem_capacity_factor: decimal factor applied to the original cloud memory capacity. A factor = 1 simulates
-   the cloud with the same memory capacity found in the traces.
-
  - mem_considered: string ("yes" or "no") defining if memory is considered in admission control
    decisions.
 
- - mem_load_factor: decimal factor applied to the original cloud memory load. A factor = 1 simulates
-   the cloud with the same memory load (requested resources) found in the traces.
 
 Sample execution of a base scenario:
 
 ```
-scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes" 1
+scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 1 "yes"
 ```
 
 
