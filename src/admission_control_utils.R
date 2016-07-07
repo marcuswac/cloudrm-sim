@@ -170,8 +170,14 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
     if (!("cpureq.factor" %in% colnames(df))) {
       df$cpureq.factor <- 1
     }
+    if (!("memreq.factor" %in% colnames(df))) {
+      df$memreq.factor <- 1
+    }
     if (!("mem.capacity.fraction" %in% colnames(df))) {
       df$mem.capacity.fraction <- 1 
+    }
+    if (!("cpuReq" %in% colnames(df))) {
+      df$cpuReq <- vmSize
     }
     df
   }
@@ -194,7 +200,7 @@ SummarizeVmAvailability <- function(files) {
       mutate(slo.availability=GetAvailabilitySLO(userClass, first(slo.scenario)),
              unavail=1-availability) %>%
       group_by(capacity.fraction, mem.capacity.fraction, slo.scenario, cpureq.factor,
-               method, userClass) %>%
+               memreq.factor, method, userClass) %>%
       summarise(vm.n=n(), vm.av.mean=mean(availability), vm.av.sd=sd(availability),
                 vm.av.median=median(availability), vm.av.q01=quantile(availability, .01),
                 vm.av.q05=quantile(availability, .05), vm.av.q25=quantile(availability, .25),
@@ -202,14 +208,14 @@ SummarizeVmAvailability <- function(files) {
                 vm.av.q25=quantile(availability, .99),
                 vm.av.slo.fulfill=ecdf(unavail)(1 - slo.availability[1]),
                 vm.slo.fulfilled.n=sum(availability >= slo.availability[1]),
-                vm.cpuruntime.fulfilled.mean=mean(vmSize * runtime),
+                vm.cpuruntime.fulfilled.mean=mean(cpuReq * runtime),
                 vm.cpuruntime.fulfilled.mean=mean((availability >= slo.availability[1]) *
-                                                    vmSize * runtime),
+                                                    cpuReq * runtime),
                 vm.cpuruntime.violated.mean=mean((availability < slo.availability[1]) *
-                                                   vmSize * runtime),
-                vm.revenue.total = sum((availability >= slo.availability[1]) * runtime * vmSize *
+                                                   cpuReq * runtime),
+                vm.revenue.total = sum((availability >= slo.availability[1]) * runtime * cpuReq *
                                          slo.availability[1], na.rm=T),
-                vm.penalty.total = sum((availability < slo.availability[1]) * elapsedTime * vmSize *
+                vm.penalty.total = sum((availability < slo.availability[1]) * elapsedTime * cpuReq *
                                          slo.availability[1], na.rm=T))
     res <- rbind(res, res.df)
   }

@@ -26,9 +26,9 @@ plots.dir <- paste(base.dir, "/plots/", sep="")
 # and get scheduled until no VM in the queue fits the remaining resource capacity.
 AgressiveBackfillScheduling <- function(demand, cpuCapacity, memCapacity=Inf) {
   allocated.id <- vector()
-  demand <- filter(demand, vmSize <= cpuCapacity, memReq <= memCapacity)
+  demand <- filter(demand, cpuReq <= cpuCapacity, memReq <= memCapacity)
   while (cpuCapacity > 0 && memCapacity > 0 && nrow(demand) > 0) {
-    cumCpuAlloc <- cumsum(demand$vmSize)
+    cumCpuAlloc <- cumsum(demand$cpuReq)
     cumMemAlloc <- cumsum(demand$memReq)
     newAllocs.id <- demand[which(cumCpuAlloc <= cpuCapacity & cumMemAlloc <= memCapacity), ]$i
     n.admitted <- length(newAllocs.id)
@@ -37,7 +37,7 @@ AgressiveBackfillScheduling <- function(demand, cpuCapacity, memCapacity=Inf) {
       cpuCapacity <- cpuCapacity - cumCpuAlloc[n.admitted]
       memCapacity <- memCapacity - cumMemAlloc[n.admitted]
     }
-    demand <- filter(demand, !(id %in% newAllocs.id), vmSize <= cpuCapacity, memReq <= memCapacity)
+    demand <- filter(demand, !(id %in% newAllocs.id), cpuReq <= cpuCapacity, memReq <= memCapacity)
   }
   return(list(allocated.id=allocated.id, remainingCapacity=cpuCapacity,
               remainingMemCapacity=memCapacity))
@@ -58,7 +58,7 @@ PriorityScheduling <- function(t, state, demand, capacity, memCapacity) {
 # priority class associated to the VM is not exceeded.
 QuotaAdmissionControl <- function(t, demand, state, quota, mem.quota=Inf) {
   currentDemand <- filter(demand, submitTime < t) %>%
-                   summarise(cpu=sum(vmSize), mem=sum(memReq))
+                   summarise(cpu=sum(cpuReq), mem=sum(memReq))
   cpuDemand <- max(0, currentDemand$cpu)
   memDemand <- max(0, currentDemand$mem)
   
@@ -257,7 +257,7 @@ GreedyRejectionAllocation <- function(t, state, name="greedy-reject", mem.consid
 # Calculates VM availability statistics for the VM departures (i.e., finished)
 CalculateVmAvailability <- function(departures, time, out.file) {
   vm.availability <- with(departures,
-                          data_frame(userClass, vmSize, memReq, runtime, 
+                          data_frame(userClass, cpuReq, memReq, runtime, 
                                      elapsedTime=(time-submitTime), 
                                      availability=runtime/elapsedTime))
   return(vm.availability)
@@ -266,7 +266,8 @@ CalculateVmAvailability <- function(departures, time, out.file) {
 # Update the current cloud demand with the new VM request arrivals in a time window,
 # update the runtime of the VMs allocated in the previous time window and update the
 # VM departures by filtering the VMs that completed their service times.
-UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpureq.factor=1) {
+UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpureq.factor=1,
+                         memreq.factor=1) {
   arrivals <- tasks %>%
               filter(between(submitTime, (t-1)*interval.size + 1, t*interval.size),
                      runtime > 0, cpuReq > 0) %>%
@@ -279,8 +280,8 @@ UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpu
                         serviceDemand = ifelse(endTime != -1,
                                                DefineTimeIntervals(runtime, interval.size), Inf),
                         runtime = 0,
-                        vmSize = DefineVmSize(cpuReq, bundle, cpureq.factor),
-                        memReq = memReq,
+                        cpuReq = DefineVmSize(cpuReq, bundle, cpureq.factor),
+                        memReq = memReq * memreq.factor,
                         id = state$ntasks + row_number())
   
   state$ntasks <- max(state$ntasks, arrivals$id)
@@ -327,7 +328,7 @@ CalculateAllocationStats <- function(t, state, max.time) {
     mem.quota <- ifelse(!is.null(state$mem.quota), state$mem.quota[[uc]], NA)
     remainingCapacity <- state$totalCapacity - allocatedCpu
     remainingMemCapacity <- state$totalMemCapacity - allocatedMem
-    allocatedCpu <- allocatedCpu + sum(allocated.uc$vmSize)
+    allocatedCpu <- allocatedCpu + sum(allocated.uc$cpuReq)
     allocatedMem <- allocatedMem + sum(allocated.uc$memReq)
     
     if (t == max.time) {
@@ -339,27 +340,27 @@ CalculateAllocationStats <- function(t, state, max.time) {
     slo.av <- state$slo.availability[i]
     vm.availability.stats <- filter(state$vm.availability, userClass == uc) %>%
                              summarise(departures.n=n(),
-                                       departures.cpu=sum(vmSize),
+                                       departures.cpu=sum(cpuReq),
                                        departures.mem=sum(memReq),
                                        vm.availability.mean=mean(availability),
                                        vm.slo.violated.n=sum(availability < slo.av),
-                                       vm.slo.violated.cputime=sum(vmSize*elapsedTime*(availability < slo.av)))
+                                       vm.slo.violated.cputime=sum(cpuReq*elapsedTime*(availability < slo.av)))
     
     state$stats.t <- rbind(state$stats.t,
                            bind_cols(data_frame(time=t, userClass=uc,
                                                 capacity.rem.cpu=remainingCapacity,
                                                 capacity.rem.mem=remainingMemCapacity,
                                                 demand.n=nrow(demand.uc),
-                                                demand.cpu=sum(demand.uc$vmSize),
+                                                demand.cpu=sum(demand.uc$cpuReq),
                                                 demand.mem=sum(demand.uc$memReq),
                                                 allocated.n=nrow(allocated.uc),
-                                                allocated.cpu=sum(allocated.uc$vmSize),
+                                                allocated.cpu=sum(allocated.uc$cpuReq),
                                                 allocated.mem=sum(allocated.uc$memReq),
                                                 rejected.n=nrow(rejected.uc),
-                                                rejected.cpu=sum(rejected.uc$vmSize),
+                                                rejected.cpu=sum(rejected.uc$cpuReq),
                                                 rejected.mem=sum(rejected.uc$memReq),
                                                 arrivals.n=nrow(arrivals.uc), 
-                                                arrivals.cpu=sum(arrivals.uc$vmSize), 
+                                                arrivals.cpu=sum(arrivals.uc$cpuReq), 
                                                 arrivals.mem=sum(arrivals.uc$memReq),
                                                 quota, mem.quota),
                                       vm.availability.stats))
@@ -371,14 +372,14 @@ CalculateAllocationStats <- function(t, state, max.time) {
 ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fun, out.file,
                                       bundle=T, capacity.fraction=1, seed, interval.size=300000000,
                                       slo.scenario=1, cpureq.factor=1, write.vm.summary=F,
-				                              mem.capacity.fraction=1, mem.considered=F) {
+				                              mem.capacity.fraction=1, mem.considered=F, memreq.factor=1) {
   max.time <- min(max.time, max(capacities$interval))
   state <- list(method="", demand=data.frame(), stats=data.frame(), ntasks=0,
                 allocated.id=vector(), rejected.id=vector(),
                 slo.availability=AVAILABILITY_SLOS_SCENARIOS[[slo.scenario]])
   firstVmFile <- TRUE
   for (t in 0:max.time) {
-    state <- UpdateDemand(t, tasks, state, bundle, interval.size, cpureq.factor)
+    state <- UpdateDemand(t, tasks, state, bundle, interval.size, cpureq.factor, memreq.factor)
     state$totalCapacity <- (filter(capacities, interval == t))$cpu
     state$totalMemCapacity <- (filter(capacities, interval == t))$mem
     
@@ -386,7 +387,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
     
     state <- CalculateAllocationStats(t, state, max.time)
     stats <- data.frame(capacity.fraction, mem.capacity.fraction, slo.scenario, cpureq.factor,
-                        slo.availability=state$slo.availability, method=state$method, state$stats.t)
+                        memreq.factor, slo.availability=state$slo.availability, method=state$method,
+                        state$stats.t)
     state$stats <- rbind(state$stats, stats)
     
     vm.av.file <- paste(out.file, "vm-avail.txt", sep="_")
@@ -396,7 +398,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
       if (nrow(state$vm.availability) > 0) {
         vm.availability.df <- data.frame(capacity.fraction, mem.capacity.fraction,
                                          method=state$method, slo.scenario, cpureq.factor,
-                                         state$vm.availability)
+                                         memreq.factor, state$vm.availability)
         WriteResults(t, vm.availability.df, vm.av.file, first = firstVmFile)
         firstVmFile <- FALSE
       }
@@ -450,7 +452,9 @@ Main <- function(argv=NULL) {
   # arg 11: fraction of memory capacity found in the original traces considered in the simulations
   mem.capacity.fraction <- ifelse(length(argv) > 10, as.numeric(argv[11]), 1)
   # arg 12: indicates whether the admission control will also consider memory ("yes") or not ("no")
-  mem.considered <- ifelse(length(argv) > 11, argv[12] != "no", FALSE) # memory considered
+  mem.considered <- ifelse(length(argv) > 11, argv[12] != "no", FALSE)
+  # arg 13: fraction of CPU demand found in the original traces considered in the simulations
+  memreq.factor <- ifelse(length(argv) > 12, as.numeric(argv[13]), 1)
   
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
@@ -490,7 +494,8 @@ Main <- function(argv=NULL) {
   state <- ExecuteResourceAllocation(tasks, capacities, max.time, method.f, output.file,
                                      bundle = bundle == "bundle", capacity.fraction, seed,
                                      interval.size, slo.scenario, cpureq.factor,
-                                     write.vm.summary = T, mem.capacity.fraction, mem.considered)
+                                     write.vm.summary = T, mem.capacity.fraction, mem.considered,
+                                     memreq.factor)
   
   return(state)
 }
