@@ -426,6 +426,8 @@ WriteResults <- function(t, stats, out.file, first) {
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
 Main <- function(argv=NULL) {
 
+  print(argv)
+
   # Creating a object to enum the options
   
   option <- arg_parser('options of simulation')
@@ -486,6 +488,8 @@ Main <- function(argv=NULL) {
   output.file <- paste("res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
                         "_memcf-", mem.capacity.fraction, "_memlf-", memreq.factor, "_sc-", slo.scenario, 
                         "_withmem-", choose$mem_considered, "_ac.txt", sep="")
+
+  print(output.file)
 
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
