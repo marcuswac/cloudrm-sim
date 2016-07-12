@@ -58,7 +58,7 @@ optional arguments:
 Sample execution of a base scenario:
 
 ```
-scripts/run_admission_control_sim.sh --method "forecast-ets-quota" --cpu-capacity-factor 1 --mem-capacity-factor 1 --cpu-load-factor 1 --mem-load-factor 1 --slo-scenario 1 --consider-mem
+scripts/run_admission_control_sim.sh "forecast-ets-quota" --cpu-capacity-factor 1 --mem-capacity-factor 1 --cpu-load-factor 1 --mem-load-factor 1 --slo-scenario 1 --consider-mem
 ```
 
 
