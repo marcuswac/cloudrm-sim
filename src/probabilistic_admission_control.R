@@ -444,6 +444,10 @@ Main <- function(argv=NULL) {
                           cloud CPU load. A factor = 1 simulates the cloud with the same CPU load 
                           (requested resources) found in the traces.", default = 1)
 
+    option <- add_argument(option, "--capacity-fraction", help = "decimal factor applied to the original 
+                           cloud CPU capacity. A factor = 1 simulates the cloud with the same CPU capacity 
+                           found in the traces", default = 1)
+
   option <- add_argument(option, "--mem-capacity-fraction", help = "decimal factor applied to the original 
   			cloud memory capacity. A factor = 1 simulates the cloud with the same memory capacity 
   			found in the traces.", default = 1)
