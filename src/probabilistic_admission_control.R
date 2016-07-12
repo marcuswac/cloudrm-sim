@@ -426,15 +426,12 @@ WriteResults <- function(t, stats, out.file, first) {
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
 Main <- function(argv=NULL) {
 
-  print(argv)
-
-  # Creating a object to enum the options
+  # Creating a object type "option" to store the options of the simulation and setting default values
   
   option <- arg_parser('options of simulation')
 
   option <- add_argument(option, "--method-name", help = "name of the admission control method 
-                          (greedy-norejection, greedy-quota, forecast-mean-quota, forecast-ets-quota)", 
-                           default="forecast-ets-quota")
+                          (greedy-norejection, greedy-quota, forecast-mean-quota, forecast-ets-quota)")
 
   option <- add_argument(option, "--slo-scenario", help = "integer that identifies the 
                           availability SLO scenario. Possible values: 1: medium; 2: very low; 3: low; 
@@ -459,10 +456,10 @@ Main <- function(argv=NULL) {
                           Memory load. A factor = 1 simulates the cloud with the same Memory load 
                           (requested resources) found in the traces.", default = 1)
 
-  # assign the options to variable of type option
+  # assign the options to variable
   choose <- parse_args(option, argv)
   
-  # Expected arguments and default values:
+  # Expected arguments:
 
   # arg 1: name that identifies the admission control method
   method.name <- choose$method_name
@@ -492,8 +489,6 @@ Main <- function(argv=NULL) {
   output.file <- paste("output/res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
                         "_memcf-", mem.capacity.fraction, "_memlf-", memreq.factor, "_sc-", slo.scenario, 
                         "_withmem-", choose$mem_considered, "_ac.txt", sep="")
-
-  print(output.file)
 
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
