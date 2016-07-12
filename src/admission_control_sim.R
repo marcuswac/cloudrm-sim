@@ -442,35 +442,41 @@ Main <- function(argv=NULL) {
   opts <- add_argument(opts, "--cpu-capacity-factor",
                        help = "decimal factor applied to the original \
                                cloud CPU capacity. A factor = 1 simulates the cloud with the same
-                               CPU capacity found in the traces", default = 1)
+                               CPU capacity found in the traces", default = 1,
+                       short = "-ccf")
                                  
   opts <- add_argument(opts, "--mem-capacity-factor",
                        help = "decimal factor applied to the original \
   	                           cloud memory capacity. A factor = 1 simulates the cloud with the \
-                               same memory capacity found in the traces.", default = 1)
+                               same memory capacity found in the traces.", default = 1,
+                       short = "-mcf")
 
   opts <- add_argument(opts, "--cpu-load-factor",
                        help = "decimal factor applied to the original \
                                cloud CPU load. A factor = 1 simulates the cloud with the same CPU \
-                               load (requested resources) found in the traces.", default = 1)
+                               load (requested resources) found in the traces.", default = 1,
+                       short = "-clf")
                           
   opts <- add_argument(opts, "--mem-load-factor",
                        help = "decimal factor applied to the original cloud \ 
                                Memory load. A factor = 1 simulates the cloud with the same Memory \
-                               load (requested resources) found in the traces.", default = 1)
+                               load (requested resources) found in the traces.", default = 1,
+                       short = "-mlf")
 
   opts <- add_argument(opts, "--slo-scenario",
                        help = "integer that identifies the \
                                availability SLO scenario. Possible values: 1 (medium); 2 \
-                               (very low); 3 (low); 4 (high); 5 (very high)", default = 1)
+                               (very low); 3 (low); 4 (high); 5 (very high)", default = 1,
+                       short = "-s")
   
   opts <- add_argument(opts, "--consider-mem",
                        help = "flag that defines if memory is considered in admission \
-                               control decisions.", flag = TRUE, default = FALSE)
+                               control decisions.", flag = TRUE, default = FALSE,
+                       short = "-cm")
                        
   opts <- add_argument(opts, "--output-file-prefix",
                        help = "Prefix for the CSV file name output file with simulation results",
-                       default = "res")
+                       default = "res", "-o")
 
   # assign the options to variable
   params <- parse_args(opts, argv)
