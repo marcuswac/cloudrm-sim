@@ -30,10 +30,12 @@ Input parameters:
 Options for admission control simulation
 
 positional arguments:
+
   method			                                         Name of the admission control method. Options: (greedy-norejection, 
                                                        greedy-quota, forecast-mean-quota, forecast-ets-quota)
 
 flags:
+
   -h, --help			                                     Show this help message and exit
   
   -cmem, --consider-mem		 	                         Flag that defines if memory is considered in admission control decisions.                                                    [default: FALSE]
