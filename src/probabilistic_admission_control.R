@@ -396,7 +396,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
                         state$stats.t)
     state$stats <- rbind(state$stats, stats)
     
-    vm.av.file <- paste(out.file, "vm-avail.txt", sep="_")
+    vm.av.file <- paste(out.file, "vm-avail.csv", sep="_")
     
     if (!is.null(out.file)) {
       WriteResults(t, stats, out.file, first = t == 0)
@@ -415,7 +415,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
  
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
-    vm.av.summary.file <- paste(out.file, "vm-avail-summary.txt", sep="_")
+    vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
     write.csv(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
   }
   
@@ -495,7 +495,7 @@ Main <- function(argv=NULL) {
                       paste(output.dir, output_file_prefix, "_", method.name, "_cpucf-",
                             cpu_capacity_factor, "_cpulf-", cpu_load_factor, "_memcf-",
                             mem_capacity_factor, "_memlf-", mem_load_factor, "_sc-", slo_scenario,
-                            "_considermem-", consider_mem, "_ac.txt", sep=""))
+                            "_considermem-", consider_mem, "_ac.csv", sep=""))
 
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(input.dir, "gtrace_data.sqlite3", sep="/")
