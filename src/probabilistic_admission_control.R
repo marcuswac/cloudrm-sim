@@ -1,3 +1,5 @@
+#!/usr/bin/env Rscript
+
 ############################################################################################
 # This script implements a simulator for the resource management of IaaS cloud computing
 # providers. The focus is the evaluation of different admission control strategies.
@@ -10,19 +12,19 @@
 ############################################################################################
 
 # Before running the script, you need to have install the following R libraries:
-library(dplyr)
-library(RSQLite)
-library(foreach)
-library(forecast)
-library(argparser)
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(RSQLite))
+suppressPackageStartupMessages(library(foreach))
+suppressPackageStartupMessages(library(forecast))
+suppressPackageStartupMessages(library(argparser))
 
 source("src/admission_control_utils.R")
 
 base.dir <- "."
 setwd(base.dir)
-plots.dir <- paste(base.dir, "/plots/", sep="")
 input.dir <- paste(base.dir, "/data/", sep="")
 output.dir <- paste(base.dir, "/output/", sep="")
+dir.create(output.dir, showWarnings = FALSE)
 
 # Implements an aggressive backfill scheduling strategy. If highest priority VMs in the scheduling
 # queue do not fit in the available capacity, other lower priority VMs that fit may skip them
@@ -414,7 +416,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
     vm.av.summary.file <- paste(out.file, "vm-avail-summary.txt", sep="_")
-    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
+    write.csv(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
   }
   
   return(vm.av.summary)
@@ -422,7 +424,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
 
 # Writes the output results in a file for each time window.
 WriteResults <- function(t, stats, out.file, first) {
-  write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first)
+  write.csv(stats, out.file, append = !first, quote = F, row.names = F, col.names = first)
 }
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
@@ -434,36 +436,37 @@ Main <- function(argv=NULL) {
 
   opts <- add_argument(opts, "method",
                        help = "name of the admission control method. Options: \
-                              (greedy-norejection, greedy-quota, forecast-mean-quota, forecast-ets-quota)")
+                              (greedy-norejection, greedy-quota, forecast-mean-quota,
+                              forecast-ets-quota)")
 
   opts <- add_argument(opts, "--cpu-capacity-factor",
-                       help = "decimal factor applied to the original 
+                       help = "decimal factor applied to the original \
                                cloud CPU capacity. A factor = 1 simulates the cloud with the same
                                CPU capacity found in the traces", default = 1)
                                  
   opts <- add_argument(opts, "--mem-capacity-factor",
-                       help = "decimal factor applied to the original 
-  	                           cloud memory capacity. A factor = 1 simulates the cloud with the same
-  		                         memory capacity found in the traces.", default = 1)
+                       help = "decimal factor applied to the original \
+  	                           cloud memory capacity. A factor = 1 simulates the cloud with the \
+                               same memory capacity found in the traces.", default = 1)
 
   opts <- add_argument(opts, "--cpu-load-factor",
-                       help = "decimal factor applied to the original 
-                               cloud CPU load. A factor = 1 simulates the cloud with the same CPU load 
-                               (requested resources) found in the traces.", default = 1)
+                       help = "decimal factor applied to the original \
+                               cloud CPU load. A factor = 1 simulates the cloud with the same CPU \
+                               load (requested resources) found in the traces.", default = 1)
                           
   opts <- add_argument(opts, "--mem-load-factor",
-                       help = "decimal factor applied to the original cloud 
-                               Memory load. A factor = 1 simulates the cloud with the same Memory load 
-                               (requested resources) found in the traces.", default = 1)
+                       help = "decimal factor applied to the original cloud \ 
+                               Memory load. A factor = 1 simulates the cloud with the same Memory \
+                               load (requested resources) found in the traces.", default = 1)
 
   opts <- add_argument(opts, "--slo-scenario",
-                       help = "integer that identifies the 
-                               availability SLO scenario. Possible values: 1 (medium); 2 (very low);
-                               3 (low); 4 (high); 5 (very high)", default = 1)
+                       help = "integer that identifies the \
+                               availability SLO scenario. Possible values: 1 (medium); 2 \
+                               (very low); 3 (low); 4 (high); 5 (very high)", default = 1)
   
   opts <- add_argument(opts, "--consider-mem",
-                       help = "string (yes or no) defining if memory is considered in admission control decisions.",
-                       flag = TRUE, default = FALSE)
+                       help = "flag that defines if memory is considered in admission \
+                               control decisions.", flag = TRUE, default = FALSE)
                        
   opts <- add_argument(opts, "--output-file-prefix",
                        help = "Prefix for the CSV file name output file with simulation results",
@@ -488,9 +491,11 @@ Main <- function(argv=NULL) {
   # name that identifies the admission control method
   method.name <- params$method
   
-  output.file <- paste(output.dir, output_file_prefix, "_", method.name, "_cpucf-", cpu_capacity_factor,
-                       "_cpulf-", cpu_load_factor, "_memcf-", mem_capacity_factor, "_memlf-", mem_load_factor,
-                       "_sc-", slo_scenario, "_considermem-", consider_mem, "_ac.txt", sep=""))
+  output.file <- with(params,
+                      paste(output.dir, output_file_prefix, "_", method.name, "_cpucf-",
+                            cpu_capacity_factor, "_cpulf-", cpu_load_factor, "_memcf-",
+                            mem_capacity_factor, "_memlf-", mem_load_factor, "_sc-", slo_scenario,
+                            "_considermem-", consider_mem, "_ac.txt", sep=""))
 
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(input.dir, "gtrace_data.sqlite3", sep="/")
@@ -520,7 +525,7 @@ Main <- function(argv=NULL) {
   # Load cloud capacity over time from text file
   capacities <- with(params,
                      CalculateTotalCapacityPerInterval(LoadMachineEvents(db.file), cpu_capacity_factor,
-                                                       interval.size, mem_capacity_factor)
+                                                       interval.size, mem_capacity_factor))
   
   # Discretize VM sizes if "bundled" option is chosen
   if (bundle == "bundle") {
@@ -528,6 +533,7 @@ Main <- function(argv=NULL) {
   }
  
   # Simulates admission control and resource allocation over time
+  print("Starting simulation...")
   state <- with(params,
                 ExecuteResourceAllocation(tasks, capacities, max.time, method.f, output.file,
                                           bundle = bundle == "bundle", cpu_capacity_factor, seed,
