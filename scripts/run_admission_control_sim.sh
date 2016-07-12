@@ -28,11 +28,6 @@
 # Prediction-Based Admission Control for IaaS Clouds with Multiple Service. CloudCom'2015.
 # 
 
-if [ "$#" -ne 7 ]; then
-    echo "Error: Illegal number of parameters."
-    echo "Usage: run_simulation <method> <cpu_capacity_factor> <demand_factor> <slo_scenario> <mem_capacity_factor> <mem_considered> <mem_load_factor>"
-    exit 
-fi
 ARGS=$*
 
 SCRIPT_FILE="src/probabilistic_admission_control.R"
