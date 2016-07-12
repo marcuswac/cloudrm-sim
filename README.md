@@ -20,39 +20,42 @@ and install *R* packages. In order to do that, go the root directory and run thi
 To execute the admission control simulation, run this command from the root directiory:
 
 ``` 
-scripts/run_admission_control_sim.sh <method> <cpu_capacity_factor> <cpu_load_factor> <mem_capacity_factor> <slo_scenario> <mem_considered> <mem_load_factor>"
+./src/admission_control_sim.R [--] [--help] [--consider-mem] [--opts OPTS] [--cpu-capacity-factor CPU-CAPACITY-FACTOR] [--mem-capacity-factor MEM-CAPACITY-FACTOR] [--cpu-load-factor CPU-LOAD-FACTOR] [--mem-load-factor MEM-LOAD-FACTOR] [--slo-scenario SLO-SCENARIO] [--output-file-prefix OUTPUT-FILE-PREFIX] method
 ```
 
 Input parameters:
- - method: name of the admission control method (greedy-norejection, greedy-quota,
-   forecast-mean-quota, forecast-ets-quota)
 
- - cpu_capacity_factor: decimal factor applied to the original cloud CPU capacity. A factor = 1 simulates
-   the cloud with the same CPU capacity found in the traces.
 
- - cpu_load_factor: decimal factor applied to the original cloud CPU load. A factor = 1 simulates
-   the cloud with the same CPU load (requested resources) found in the traces.
 
- - mem_capacity_factor: decimal factor applied to the original cloud memory capacity. A factor = 1 simulates
-   the cloud with the same memory capacity found in the traces.
+Options for admission control simulation
 
- - slo_scenario: integer that identifies the availability SLO scenario. Possible values:
-   - 1: medium
-   - 2: very low
-   - 3: low
-   - 4: high
-   - 5: very high
+positional arguments:
+  method			                                         Name of the admission control method. Options: (greedy-norejection,                                                          greedy-quota, forecast-mean-quota, forecast-ets-quota)
 
- - mem_considered: string ("yes" or "no") defining if memory is considered in admission control
-   decisions.
+flags:
+  -h, --help			                                     Show this help message and exit
+  
+  -cmem, --consider-mem		 	                         Flag that defines if memory is considered in admission control decisions.                                                    [default: FALSE]
 
- - mem_load_factor: decimal factor applied to the original cloud memory load. A factor = 1 simulates
-   the cloud with the same memory load (requested resources) found in the traces.
+optional arguments:
+  -x, --opts OPTS			                                RDS file containing argument values
+  
+  -ccf, --cpu-capacity-factor CPU-CAPACITY-FACTOR			Decimal factor applied to the original cloud CPU capacity. A factor = 1                                                      simulates the cloud with the same CPU capacity found in the traces                                                           [default: 1]
+  
+  -mcf, --mem-capacity-factor MEM-CAPACITY-FACTOR			Decimal factor applied to the original cloud memory capacity. A factor = 1                                                   simulates the cloud with the same memory capacity found in the traces.                                                       [default: 1]
+  
+  -clf, --cpu-load-factor CPU-LOAD-FACTOR			        Decimal factor applied to the original cloud CPU load. A factor = 1                                                          simulates the cloud with the same CPU load (requested resources) found in                                                    the traces. [default: 1]
+  
+  -mlf, --mem-load-factor MEM-LOAD-FACTOR			        Decimal factor applied to the original cloud Memory load. A factor = 1                                                       simulates the cloud with the same Memory load (requested resources) found                                                    in the traces. [default: 1]
+  
+  -s, --slo-scenario SLO-SCENARIO			                Integer that identifies the availability SLO scenario. Possible values: 1                                                    (medium); 2 (very low); 3 (low); 4 (high); 5 (very high) [default: 1]
+  
+  -o, --output-file-prefix OUTPUT-FILE-PREFIX			    Prefix for the CSV file name output file with simulation results                                                             [default: res]
 
 Sample execution of a base scenario:
 
 ```
-scripts/run_admission_control_sim.sh "forecast-ets-quota" 1 1 1 1 "yes" 1
+scripts/run_admission_control_sim.sh --method "forecast-ets-quota" --cpu-capacity-factor 1 --mem-capacity-factor 1 --cpu-load-factor 1 --mem-load-factor 1 --slo-scenario 1 --consider-mem
 ```
 
 
