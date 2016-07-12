@@ -472,7 +472,7 @@ Main <- function(argv=NULL) {
   opts <- add_argument(opts, "--consider-mem",
                        help = "flag that defines if memory is considered in admission \
                                control decisions.", flag = TRUE, default = FALSE,
-                       short = "-cm")
+                       short = "-cmem")
                        
   opts <- add_argument(opts, "--output-file-prefix",
                        help = "Prefix for the CSV file name output file with simulation results",
@@ -498,10 +498,10 @@ Main <- function(argv=NULL) {
   method.name <- params$method
   
   output.file <- with(params,
-                      paste(output.dir, output_file_prefix, "_", method.name, "_cpucf-",
-                            cpu_capacity_factor, "_cpulf-", cpu_load_factor, "_memcf-",
-                            mem_capacity_factor, "_memlf-", mem_load_factor, "_sc-", slo_scenario,
-                            "_considermem-", consider_mem, "_ac.csv", sep=""))
+                      paste(output.dir, output_file_prefix, "_", method.name, "_ccf-",
+                            cpu_capacity_factor, "_clf-", cpu_load_factor, "_mcf-",
+                            mem_capacity_factor, "_mlf-", mem_load_factor, "_slo-", slo_scenario,
+                            "_cmem-", consider_mem, "_ac.csv", sep=""))
 
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(input.dir, "gtrace_data.sqlite3", sep="/")
