@@ -471,8 +471,7 @@ Main <- function(argv=NULL) {
   
   opts <- add_argument(opts, "--consider-mem",
                        help = "flag that defines if memory is considered in admission \
-                               control decisions.", flag = TRUE, default = FALSE,
-                       short = "-cmem")
+                               control decisions.", flag = TRUE, short = "-cmem")
                        
   opts <- add_argument(opts, "--output-file-prefix",
                        help = "Prefix for the CSV file name output file with simulation results",
