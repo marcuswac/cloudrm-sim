@@ -489,7 +489,7 @@ Main <- function(argv=NULL) {
   # arg 12: fraction of CPU demand found in the original traces considered in the simulations
   memreq.factor <- choose$memreq_factor
   # arg 13: name (and path) of the results output file
-  output.file <- paste("res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
+  output.file <- paste("output/res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
                         "_memcf-", mem.capacity.fraction, "_memlf-", memreq.factor, "_sc-", slo.scenario, 
                         "_withmem-", choose$mem_considered, "_ac.txt", sep="")
 
