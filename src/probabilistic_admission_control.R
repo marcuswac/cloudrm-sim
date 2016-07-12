@@ -485,7 +485,7 @@ Main <- function(argv=NULL) {
   # arg 13: name (and path) of the results output file
   output.file <- paste("res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
                         "_memcf-", mem.capacity.fraction, "_memlf-", memreq.factor, "_sc-", slo.scenario, 
-                        "_withmem-", choose$mem_considered, "_ac.txt", sep=""))
+                        "_withmem-", choose$mem_considered, "_ac.txt", sep="")
   
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
