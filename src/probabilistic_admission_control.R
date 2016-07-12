@@ -446,7 +446,7 @@ Main <- function(argv=NULL) {
   			cloud memory capacity. A factor = 1 simulates the cloud with the same memory capacity 
   			found in the traces.", default = 1)
 
-  option <- add_argument(option, "--mem-considered", help = "string ("yes" or "no") defining if memory is 
+  option <- add_argument(option, "--mem-considered", help = "string (yes or no) defining if memory is 
                          considered in admission control decisions.", default = "no")
 
   option <- add_argument(option, "--memreq-factor", help = "decimal factor applied to the original cloud 
