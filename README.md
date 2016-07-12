@@ -30,7 +30,8 @@ Input parameters:
 Options for admission control simulation
 
 positional arguments:
-  method			                                         Name of the admission control method. Options: (greedy-norejection,                                                          greedy-quota, forecast-mean-quota, forecast-ets-quota)
+  method			                                         Name of the admission control method. Options: (greedy-norejection, 
+                                                       greedy-quota, forecast-mean-quota, forecast-ets-quota)
 
 flags:
   -h, --help			                                     Show this help message and exit
