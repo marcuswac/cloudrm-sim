@@ -14,6 +14,7 @@ library(dplyr)
 library(RSQLite)
 library(foreach)
 library(forecast)
+library(argparser)
 
 source("src/admission_control_utils.R")
 
@@ -424,37 +425,67 @@ WriteResults <- function(t, stats, out.file, first) {
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
 Main <- function(argv=NULL) {
+
+  # Creating a object to enum the options
+  
+  option <- arg_parser('options of simulation')
+
+  option <- add_argument(option, "--method-name", help = "name of the admission control method 
+                          (greedy-norejection, greedy-quota, forecast-mean-quota, forecast-ets-quota)", 
+                           default="forecast-ets-quota")
+
+  option <- add_argument(option, "--slo-scenario", help = "integer that identifies the 
+                          availability SLO scenario. Possible values: 1: medium; 2: very low; 3: low; 
+                          4: high; 5: very high", default = 1)
+
+  option <- add_argument(option, "--cpureq-factor", help = "decimal factor applied to the original 
+                          cloud CPU load. A factor = 1 simulates the cloud with the same CPU load 
+                          (requested resources) found in the traces.", default = 1)
+
+  option <- add_argument(option, "--mem-capacity-fraction", help = "decimal factor applied to the original 
+  			cloud memory capacity. A factor = 1 simulates the cloud with the same memory capacity 
+  			found in the traces.", default = 1)
+
+  option <- add_argument(option, "--mem-considered", help = "string ("yes" or "no") defining if memory is 
+                         considered in admission control decisions.", default = "no")
+
+  option <- add_argument(option, "--memreq-factor", help = "decimal factor applied to the original cloud 
+                          Memory load. A factor = 1 simulates the cloud with the same Memory load 
+                          (requested resources) found in the traces.", default = 1)
+
+  # assign the options to variable of type option
+  choose <- parse_args(option, argv)
   
   # Expected arguments and default values:
 
   # arg 1: name that identifies the admission control method
-  method.name <- ifelse(length(argv) > 0, tolower(argv[1]), "forecast-ets-quota")
+  method.name <- choose$method_name
   # arg 2: base directory for the scripts, input and output files
-  base.dir <- ifelse(length(argv) > 1, argv[2], ".")
+  base.dir <- "."
   # arg 3: the VM sizes are bundled in discrete values ("bundle") or can be continuous ("nobundle")
-  bundle <- ifelse(length(argv) > 2, tolower(argv[3]), "nobundle")
+  bundle <- "nobundle"
   # arg 4: fraction of CPU capacity found in the original traces considered in the simulations
-  capacity.fraction <- ifelse(length(argv) > 3, as.numeric(argv[4]), 1)
+  capacity.fraction <- choose$capacity_fraction
   # arg 5: seed for random number generation
-  seed <- ifelse(length(argv) > 4, as.numeric(argv[5]), NA)
+  seed <- 0
   # arg 6: the maximum time to consider from the trace (use Inf to use the whole trace as input)
-  max.time <- ifelse(length(argv) > 5, as.numeric(argv[6]), Inf)
-  # arg 7: name (and path) of the results output file
-  output.file <- ifelse(length(argv) > 6, argv[7],
-                        paste("output/res_ac_", bundle, "_cf", capacity.fraction, "_seed-", seed, 
-                              "_", method.name, ".txt", sep=""))
-  # arg 8: duration of a time window (in micro-seconds). Default: 300000000 microsec = 5 minutes)
-  interval.size <- ifelse(length(argv) > 7, as.numeric(argv[8]), 300000000)
-  # arg 9: identifies the availability SLO values to use. (see AVAILABILITY_SLOS_SCENARIOS vector)
-  slo.scenario <- ifelse(length(argv) > 8, as.numeric(argv[9]), 1)
-  # arg 10: fraction of CPU demand found in the original traces considered in the simulations
-  cpureq.factor <- ifelse(length(argv) > 9, as.numeric(argv[10]), 1)
-  # arg 11: fraction of memory capacity found in the original traces considered in the simulations
-  mem.capacity.fraction <- ifelse(length(argv) > 10, as.numeric(argv[11]), 1)
-  # arg 12: indicates whether the admission control will also consider memory ("yes") or not ("no")
-  mem.considered <- ifelse(length(argv) > 11, argv[12] != "no", FALSE)
-  # arg 13: fraction of CPU demand found in the original traces considered in the simulations
-  memreq.factor <- ifelse(length(argv) > 12, as.numeric(argv[13]), 1)
+  max.time <- Inf
+  # arg 7: duration of a time window (in micro-seconds). Default: 300000000 microsec = 5 minutes)
+  interval.size <- 300000000
+  # arg 8: identifies the availability SLO values to use. (see AVAILABILITY_SLOS_SCENARIOS vector)
+  slo.scenario <- choose$slo_scenario
+  # arg 9: fraction of CPU demand found in the original traces considered in the simulations
+  cpureq.factor <- choose$cpureq_factor
+  # arg 10: fraction of memory capacity found in the original traces considered in the simulations
+  mem.capacity.fraction <- choose$mem_capacity_fraction
+  # arg 11: indicates whether the admission control will also consider memory ("yes") or not ("no")
+  mem.considered <- (choose$mem_considered != "no")
+  # arg 12: fraction of CPU demand found in the original traces considered in the simulations
+  memreq.factor <- choose$memreq_factor
+  # arg 13: name (and path) of the results output file
+  output.file <- paste("res_m-", method.name, "_cpucf-", capacity.fraction, "_cpulf-", cpureq.factor, 
+                        "_memcf-", mem.capacity.fraction, "_memlf-", memreq.factor, "_sc-", slo.scenario, 
+                        "_withmem-", choose$mem_considered, "_ac.txt", sep=""))
   
   # Expected SQLite database input file, containing the cloud demand over time
   db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
