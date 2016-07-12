@@ -33,23 +33,8 @@ if [ "$#" -ne 7 ]; then
     echo "Usage: run_simulation <method> <cpu_capacity_factor> <demand_factor> <slo_scenario> <mem_capacity_factor> <mem_considered> <mem_load_factor>"
     exit 
 fi
-
-METHOD=$1
-CPU_CAPACITY_FRACTION=$2
-CPU_LOAD_FACTOR=$3
-SLO_SCENARIO=$4
-MEM_CAPACITY_FRACTION=$5
-MEM_CONSIDERED=$6
-MEM_LOAD_FACTOR=$7
-BUNDLE="nobundle"
-SEED=0 # deprecated
-INTERVAL_SIZE=300000000 # 5 minutes in micro-seconds 
-BASE_DIR="."
-MAX_TIME="Inf"
-
-OUTPUT_FILE="output/res_m-${METHOD}_cpucf-${CPU_CAPACITY_FRACTION}_cpulf-${CPU_LOAD_FACTOR}_memcf-${MEM_CAPACITY_FRACTION}_memlf-${MEM_LOAD_FACTOR}_sc-${SLO_SCENARIO}_withmem-${MEM_CONSIDERED}_ac.txt"
+ARGS=$*
 
 SCRIPT_FILE="src/probabilistic_admission_control.R"
 
-Rscript $SCRIPT_FILE $METHOD $BASE_DIR $BUNDLE $CPU_CAPACITY_FRACTION $SEED $MAX_TIME $OUTPUT_FILE \
-        $INTERVAL_SIZE $SLO_SCENARIO $CPU_LOAD_FACTOR $MEM_CAPACITY_FRACTION $MEM_CONSIDERED $MEM_LOAD_FACTOR
+Rscript $SCRIPT_FILE $ARGS  
