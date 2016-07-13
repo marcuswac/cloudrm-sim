@@ -117,7 +117,7 @@ CalculateTotalCapacityPerInterval <- function(machineEvents, capacity.fraction=1
                    group_by(machineId) %>%
                    mutate(cpuChange = CalculateCapacityChange(eventType, cpu),
                           memChange = CalculateCapacityChange(eventType, memory)) %>%
-                   select(interval, cpuChange, memChange) %>%  
+                   select(machineId, interval, cpuChange, memChange) %>%  
                    bind_rows(data.frame(interval=intervals, cpuChange=0, memChange=0)) %>%
                    arrange(interval) %>%
                    ungroup() %>%
