@@ -1,3 +1,5 @@
+#!/usr/bin/env Rscript
+
 ############################################################################################
 # This script implements a simulator for the resource management of IaaS cloud computing
 # providers. The focus is the evaluation of different admission control strategies.
@@ -10,16 +12,19 @@
 ############################################################################################
 
 # Before running the script, you need to have install the following R libraries:
-library(dplyr)
-library(RSQLite)
-library(foreach)
-library(forecast)
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(RSQLite))
+suppressPackageStartupMessages(library(foreach))
+suppressPackageStartupMessages(library(forecast))
+suppressPackageStartupMessages(library(argparser))
 
 source("src/admission_control_utils.R")
 
 base.dir <- "."
 setwd(base.dir)
-plots.dir <- paste(base.dir, "/plots/", sep="")
+input.dir <- paste(base.dir, "/data/", sep="")
+output.dir <- paste(base.dir, "/output/", sep="")
+dir.create(output.dir, showWarnings = FALSE)
 
 # Implements an aggressive backfill scheduling strategy. If highest priority VMs in the scheduling
 # queue do not fit in the available capacity, other lower priority VMs that fit may skip them
@@ -391,7 +396,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
                         state$stats.t)
     state$stats <- rbind(state$stats, stats)
     
-    vm.av.file <- paste(out.file, "vm-avail.txt", sep="_")
+    vm.av.file <- paste(out.file, "vm-avail.csv", sep="_")
     
     if (!is.null(out.file)) {
       WriteResults(t, stats, out.file, first = t == 0)
@@ -410,8 +415,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
  
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
-    vm.av.summary.file <- paste(out.file, "vm-avail-summary.txt", sep="_")
-    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
+    vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
+    write.csv(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
   }
   
   return(vm.av.summary)
@@ -419,47 +424,88 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
 
 # Writes the output results in a file for each time window.
 WriteResults <- function(t, stats, out.file, first) {
-  write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first)
+  write.csv(stats, out.file, append = !first, quote = F, row.names = F, col.names = first)
 }
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
 Main <- function(argv=NULL) {
-  
-  # Expected arguments and default values:
 
-  # arg 1: name that identifies the admission control method
-  method.name <- ifelse(length(argv) > 0, tolower(argv[1]), "forecast-ets-quota")
-  # arg 2: base directory for the scripts, input and output files
-  base.dir <- ifelse(length(argv) > 1, argv[2], ".")
-  # arg 3: the VM sizes are bundled in discrete values ("bundle") or can be continuous ("nobundle")
-  bundle <- ifelse(length(argv) > 2, tolower(argv[3]), "nobundle")
-  # arg 4: fraction of CPU capacity found in the original traces considered in the simulations
-  capacity.fraction <- ifelse(length(argv) > 3, as.numeric(argv[4]), 1)
-  # arg 5: seed for random number generation
-  seed <- ifelse(length(argv) > 4, as.numeric(argv[5]), NA)
-  # arg 6: the maximum time to consider from the trace (use Inf to use the whole trace as input)
-  max.time <- ifelse(length(argv) > 5, as.numeric(argv[6]), Inf)
-  # arg 7: name (and path) of the results output file
-  output.file <- ifelse(length(argv) > 6, argv[7],
-                        paste("output/res_ac_", bundle, "_cf", capacity.fraction, "_seed-", seed, 
-                              "_", method.name, ".txt", sep=""))
-  # arg 8: duration of a time window (in micro-seconds). Default: 300000000 microsec = 5 minutes)
-  interval.size <- ifelse(length(argv) > 7, as.numeric(argv[8]), 300000000)
-  # arg 9: identifies the availability SLO values to use. (see AVAILABILITY_SLOS_SCENARIOS vector)
-  slo.scenario <- ifelse(length(argv) > 8, as.numeric(argv[9]), 1)
-  # arg 10: fraction of CPU demand found in the original traces considered in the simulations
-  cpureq.factor <- ifelse(length(argv) > 9, as.numeric(argv[10]), 1)
-  # arg 11: fraction of memory capacity found in the original traces considered in the simulations
-  mem.capacity.fraction <- ifelse(length(argv) > 10, as.numeric(argv[11]), 1)
-  # arg 12: indicates whether the admission control will also consider memory ("yes") or not ("no")
-  mem.considered <- ifelse(length(argv) > 11, argv[12] != "no", FALSE)
-  # arg 13: fraction of CPU demand found in the original traces considered in the simulations
-  memreq.factor <- ifelse(length(argv) > 12, as.numeric(argv[13]), 1)
+  # Creating a object type "option" to store the options of the simulation and setting default values
   
+  opts <- arg_parser('Options for admission control simulation')
+
+  opts <- add_argument(opts, "method",
+                       help = "Name of the admission control method. Options: \
+                              (greedy-norejection, greedy-quota, forecast-mean-quota,
+                              forecast-ets-quota)")
+
+  opts <- add_argument(opts, "--cpu-capacity-factor",
+                       help = "Decimal factor applied to the original \
+                               cloud CPU capacity. A factor = 1 simulates the cloud with the same
+                               CPU capacity found in the traces", default = 1,
+                       short = "-ccf")
+                                 
+  opts <- add_argument(opts, "--mem-capacity-factor",
+                       help = "Decimal factor applied to the original \
+  	                           cloud memory capacity. A factor = 1 simulates the cloud with the \
+                               same memory capacity found in the traces.", default = 1,
+                       short = "-mcf")
+
+  opts <- add_argument(opts, "--cpu-load-factor",
+                       help = "Decimal factor applied to the original \
+                               cloud CPU load. A factor = 1 simulates the cloud with the same CPU \
+                               load (requested resources) found in the traces.", default = 1,
+                       short = "-clf")
+                          
+  opts <- add_argument(opts, "--mem-load-factor",
+                       help = "Decimal factor applied to the original cloud \ 
+                               Memory load. A factor = 1 simulates the cloud with the same Memory \
+                               load (requested resources) found in the traces.", default = 1,
+                       short = "-mlf")
+
+  opts <- add_argument(opts, "--slo-scenario",
+                       help = "Integer that identifies the \
+                               availability SLO scenario. Possible values: 1 (medium); 2 \
+                               (very low); 3 (low); 4 (high); 5 (very high)", default = 1,
+                       short = "-s")
+  
+  opts <- add_argument(opts, "--consider-mem",
+                       help = "Flag that defines if memory is considered in admission \
+                               control decisions.", flag = TRUE, short = "-cmem")
+                       
+  opts <- add_argument(opts, "--output-file-prefix",
+                       help = "Prefix for the CSV file name output file with simulation results",
+                       default = "res", "-o")
+
+  # assign the options to variable
+  params <- parse_args(opts, argv)
+  
+  # Default arguments:
+
+  # base directory for the scripts, input and output files
+  base.dir <- "."
+  # the VM sizes are bundled in discrete values ("bundle") or can be continuous ("nobundle")
+  bundle <- "nobundle"
+  # seed for random number generation
+  seed <- 0
+  # the maximum time to consider from the trace (use Inf to use the whole trace as input)
+  max.time <- Inf
+  # duration of a time window (in micro-seconds). Default: 300000000 microsec = 5 minutes)
+  interval.size <- 300000000
+  
+  # name that identifies the admission control method
+  method.name <- params$method
+  
+  output.file <- with(params,
+                      paste(output.dir, output_file_prefix, "_", method.name, "_ccf-",
+                            cpu_capacity_factor, "_clf-", cpu_load_factor, "_mcf-",
+                            mem_capacity_factor, "_mlf-", mem_load_factor, "_slo-", slo_scenario,
+                            "_cmem-", consider_mem, "_ac.csv", sep=""))
+
   # Expected SQLite database input file, containing the cloud demand over time
-  db.file <- paste(base.dir, "data/gtrace_data.sqlite3", sep="/")
+  db.file <- paste(input.dir, "gtrace_data.sqlite3", sep="/")
   # Expected text input file, containing the cloud capacity over time
-  capacity.file <- paste(base.dir, "data/gtrace_total_capacity.txt", sep="/")
+  capacity.file <- paste(input.dir, "gtrace_total_capacity.txt", sep="/")
   
   # Defines the appropriate admission control function 
   if (method.name == "greedy-norejection") {
@@ -482,8 +528,9 @@ Main <- function(argv=NULL) {
   tasks <- LoadTaskEvents(db.file, from.sqlite=T)
   
   # Load cloud capacity over time from text file
-  capacities <- CalculateTotalCapacityPerInterval(LoadMachineEvents(db.file), capacity.fraction,
-                                                  interval.size, mem.capacity.fraction)
+  capacities <- with(params,
+                     CalculateTotalCapacityPerInterval(LoadMachineEvents(db.file), cpu_capacity_factor,
+                                                       interval.size, mem_capacity_factor))
   
   # Discretize VM sizes if "bundled" option is chosen
   if (bundle == "bundle") {
@@ -491,11 +538,13 @@ Main <- function(argv=NULL) {
   }
  
   # Simulates admission control and resource allocation over time
-  state <- ExecuteResourceAllocation(tasks, capacities, max.time, method.f, output.file,
-                                     bundle = bundle == "bundle", capacity.fraction, seed,
-                                     interval.size, slo.scenario, cpureq.factor,
-                                     write.vm.summary = T, mem.capacity.fraction, mem.considered,
-                                     memreq.factor)
+  print("Starting simulation...")
+  state <- with(params,
+                ExecuteResourceAllocation(tasks, capacities, max.time, method.f, output.file,
+                                          bundle = bundle == "bundle", cpu_capacity_factor, seed,
+                                          interval.size, slo_scenario, cpu_load_factor,
+                                          write.vm.summary = T, mem_capacity_factor, consider_mem,
+                                          mem_load_factor))
   
   return(state)
 }
@@ -504,6 +553,4 @@ Main <- function(argv=NULL) {
 argv <- commandArgs(trailingOnly = TRUE)
 
 # If any input argument is found, execute the main function
-if (length(argv) > 0) {
   Main(argv)
-}
