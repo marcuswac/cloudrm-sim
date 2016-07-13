@@ -18,11 +18,11 @@ DefineTimeIntervals <- function(x, interval.size=300000000, sec=FALSE) {
   return(intervals)
 }
 
-DefineVmSize <- function(cpu, bundle=T, cpureq.factor=1) {
+DefineVmSize <- function(cpu, bundle=T, cpu.load.factor=1) {
   if (bundle) {
-    vmSize <- 2^ceiling(pmax(0, log2(cpu * cpureq.factor * MAX_CPU)))
+    vmSize <- 2^ceiling(pmax(0, log2(cpu * cpu.load.factor * MAX_CPU)))
   } else {
-    vmSize <- cpu * cpureq.factor
+    vmSize <- cpu * cpu.load.factor
   }
   return(vmSize)
 }
@@ -109,8 +109,8 @@ CalculateCapacityChange <- function(eventType, capacity) {
   return(capacityChange)
 }
 
-CalculateTotalCapacityPerInterval <- function(machineEvents, capacity.fraction=1,
-                                              interval.size=300000000, mem.capacity.fraction=1) {
+CalculateTotalCapacityPerInterval <- function(machineEvents, cpu.capacity.factor=1,
+                                              interval.size=300000000, mem.capacity.factor=1) {
   machineEvents <- mutate(machineEvents, interval = ceiling(time / interval.size))
   intervals <- 0:max(machineEvents$interval)
   capacities <- machineEvents %>%
@@ -123,7 +123,7 @@ CalculateTotalCapacityPerInterval <- function(machineEvents, capacity.fraction=1
                    ungroup() %>%
                    transmute(interval, cpu=cumsum(cpuChange), mem=cumsum(memChange)) %>%
                    group_by(interval) %>%
-                   summarise(cpu=last(cpu)*capacity.fraction, mem=last(mem)*mem.capacity.fraction)
+                   summarise(cpu=last(cpu)*cpu.capacity.factor, mem=last(mem)*mem.capacity.factor)
   return(capacities)
 }
 
@@ -167,14 +167,14 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
                              userClass.levels=c("prod", "batch", "free")) {
   stats <- foreach(file = stats.files, .combine=rbind) %do% {
     df <- read.table(file, header=T)
-    if (!("cpureq.factor" %in% colnames(df))) {
-      df$cpureq.factor <- 1
+    if (!("cpu.load.factor" %in% colnames(df))) {
+      df$cpu.load.factor <- 1
     }
-    if (!("memreq.factor" %in% colnames(df))) {
-      df$memreq.factor <- 1
+    if (!("mem.load.factor" %in% colnames(df))) {
+      df$mem.load.factor <- 1
     }
-    if (!("mem.capacity.fraction" %in% colnames(df))) {
-      df$mem.capacity.fraction <- 1 
+    if (!("mem.capacity.factor" %in% colnames(df))) {
+      df$mem.capacity.factor <- 1 
     }
     if (!("cpuReq" %in% colnames(df))) {
       df$cpuReq <- vmSize
@@ -192,15 +192,15 @@ SummarizeVmAvailability <- function(files) {
     gc()
     res.df <- read.table(f, header=T)
     
-    if (!("mem.capacity.fraction" %in% colnames(res.df))) {
-      res.df$mem.capacity.fraction <- 1
+    if (!("mem.capacity.factor" %in% colnames(res.df))) {
+      res.df$mem.capacity.factor <- 1
     }
     
     res.df <- res.df %>%
       mutate(slo.availability=GetAvailabilitySLO(userClass, first(slo.scenario)),
              unavail=1-availability) %>%
-      group_by(capacity.fraction, mem.capacity.fraction, slo.scenario, cpureq.factor,
-               memreq.factor, method, userClass) %>%
+      group_by(cpu.capacity.factor, mem.capacity.factor, slo.scenario, cpu.load.factor,
+               mem.load.factor, method, userClass) %>%
       summarise(vm.n=n(), vm.av.mean=mean(availability), vm.av.sd=sd(availability),
                 vm.av.median=median(availability), vm.av.q01=quantile(availability, .01),
                 vm.av.q05=quantile(availability, .05), vm.av.q25=quantile(availability, .25),
