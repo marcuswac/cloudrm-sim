@@ -20,8 +20,7 @@ and install *R* packages. In order to do that, go the root directory and run thi
 To execute the admission control simulation, run this command from the project root directory:
 
 ``` 
-<<<<<<< HEAD
-src/admission_control_sim.R [--] [--help] [--consider-mem] [--opts opts] [--cpu-capacity-factor factor] \
+./src/admission_control_sim.R [--] [--help] [--consider-mem] [--opts opts] [--cpu-capacity-factor factor] \
                             [--mem-capacity-factor factor] [--cpu-load-factor factor] [--mem-load-factor factor] \
                             [--slo-scenario scenario] [--output-file-prefix prefix] method
 ```
@@ -70,7 +69,7 @@ optional arguments:
 Sample execution of a base scenario:
 
 ```
-src/admission_control_sim.R forecast-ets-quota --cpu-capacity-factor 1 --mem-capacity-factor 1 --cpu-load-factor 1 \
+./src/admission_control_sim.R forecast-ets-quota --cpu-capacity-factor 1 --mem-capacity-factor 1 --cpu-load-factor 1 \
                             --mem-load-factor 1 --slo-scenario 1 --consider-mem
 ```
 
