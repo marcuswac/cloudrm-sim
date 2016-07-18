@@ -81,7 +81,7 @@ LoadMachineEvents <- function(file, from.sqlite=T) {
   if (from.sqlite) {
     db <- src_sqlite(file)
     machineEvents <- tbl(db, "machine_events") %>%
-                     collect() %>%
+                     collect(n = Inf) %>%
                      mutate(time = as.numeric(time),
                             cpu = ifelse(is.na(as.numeric(cpu)), 0, as.numeric(cpu)),
                             memory = ifelse(is.na(as.numeric(memory)), 0, as.numeric(memory)))
@@ -167,17 +167,46 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
                              userClass.levels=c("prod", "batch", "free")) {
   stats <- foreach(file = stats.files, .combine=rbind) %do% {
     df <- read.table(file, header=T)
-    if (!("cpu.load.factor" %in% colnames(df))) {
-      df$cpu.load.factor <- 1
-    }
-    if (!("mem.load.factor" %in% colnames(df))) {
-      df$mem.load.factor <- 1
+  
+    if (!("cpu.capacity.factor" %in% colnames(df))) {
+      if ("capacity.fraction" %in% colnames(df)) {
+        df$cpu.capacity.factor <- df$capacity.fraction
+        df$capacity.fraction <- NULL
+      } else {
+        df$cpu.capacity.factor <- 1
+      }
     }
     if (!("mem.capacity.factor" %in% colnames(df))) {
-      df$mem.capacity.factor <- 1 
+      if ("mem.capacity.fraction" %in% colnames(df)) {
+        df$mem.capacity.factor <- df$mem.capacity.fraction
+        df$mem.capacity.fraction <- NULL
+      } else {
+        df$mem.capacity.factor <- 1
+      }
+    }
+    if (!("cpu.load.factor" %in% colnames(df))) {
+      if ("cpureq.factor" %in% colnames(df)) {
+        df$cpu.load.factor <- df$cpureq.factor
+        df$cpureq.factor <- NULL
+      } else {
+        df$cpu.load.factor <- 1
+      }
+    }
+    if (!("mem.load.factor" %in% colnames(df))) {
+      if ("memreq.factor" %in% colnames(df)) {
+        df$mem.load.factor <- df$memreq.factor
+        df$memreq.factor <- NULL
+      } else {
+        df$mem.load.factor <- 1
+      }
     }
     if (!("cpuReq" %in% colnames(df))) {
-      df$cpuReq <- vmSize
+      if ("vmSize" %in% colnames(df)) {
+        df$cpuReq <- df$vmSize
+        df$vmSize <- NULL
+      } else {
+        df$cpuReq <- NA
+      }
     }
     df
   }

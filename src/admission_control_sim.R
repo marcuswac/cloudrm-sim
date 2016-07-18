@@ -278,7 +278,7 @@ UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpu
                      runtime > 0, cpuReq > 0) %>%
               select(userClass, priority, schedulingClass, submitTime, runtime, endTime, cpuReq,
                      memReq) %>%
-              collect() %>%
+              collect(n = Inf) %>%
               transmute(userClass = factor(DefineUserClass(priority, schedulingClass),
                                            levels=USER_CLASSES),
                         submitTime = DefineTimeIntervals(submitTime, interval.size),
@@ -417,7 +417,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
     vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
-    write.csv(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
+    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T,
+                sep = ",")
   }
   
   return(vm.av.summary)
@@ -425,7 +426,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
 
 # Writes the output results in a file for each time window.
 WriteResults <- function(t, stats, out.file, first) {
-  write.csv(stats, out.file, append = !first, quote = F, row.names = F, col.names = first)
+  write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first,
+              sep = ",")
 }
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
@@ -554,4 +556,4 @@ Main <- function(argv=NULL) {
 argv <- commandArgs(trailingOnly = TRUE)
 
 # If any input argument is found, execute the main function
-  Main(argv)
+Main(argv)
