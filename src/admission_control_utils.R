@@ -1,5 +1,6 @@
 # This file contains utils functions that are common for different scripts.
-require(dplyr)
+library(dplyr)
+library(readr)
 
 USER_CLASSES <- c("prod", "batch", "free")
 slo.scenario <- 1
@@ -166,8 +167,11 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
                                              "pred-cmean", "pred-ets"),
                              userClass.levels=c("prod", "batch", "free")) {
   stats <- foreach(file = stats.files, .combine=rbind) %do% {
-    df <- read.table(file, header=T)
-  
+    if (endsWith(file, "csv")) {
+      df <- read_csv(file)
+    } else {
+      df <- read.table(file, header=T)
+    }
     if (!("cpu.capacity.factor" %in% colnames(df))) {
       if ("capacity.fraction" %in% colnames(df)) {
         df$cpu.capacity.factor <- df$capacity.fraction
@@ -219,7 +223,11 @@ SummarizeVmAvailability <- function(files) {
   res <- data.frame()
   for (f in files) {
     gc()
-    res.df <- read.table(f, header=T)
+    if (endsWith(f, "csv")) {
+      res.df <- read.csv(f)
+    } else {
+      res.df <- read.table(f, header=T)
+    }
     
     if (!("mem.capacity.factor" %in% colnames(res.df))) {
       res.df$mem.capacity.factor <- 1

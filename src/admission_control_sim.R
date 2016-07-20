@@ -17,6 +17,7 @@ suppressPackageStartupMessages(library(RSQLite))
 suppressPackageStartupMessages(library(foreach))
 suppressPackageStartupMessages(library(forecast))
 suppressPackageStartupMessages(library(argparser))
+suppressPackageStartupMessages(library(readr))
 
 source("src/admission_control_utils.R")
 
@@ -245,7 +246,7 @@ GreedyQuotaAllocation <- function(t, state, name="greedy-quota", mem.considered=
 
 # Method to allocate VMs without using admission control (i.e., with no VM rejections)
 GreedyNoRejectionAllocation <- function(t, state, name="greedy-noreject", mem.considered=F) {
-  state <- PriorityScheduling(t, state, state$demand, state$totalCapacity)
+  state <- PriorityScheduling(t, state, state$demand, state$totalCapacity, state$totalMemCapacity)
   state$method <- name
   return(state)
 }
@@ -253,7 +254,7 @@ GreedyNoRejectionAllocation <- function(t, state, name="greedy-noreject", mem.co
 # Greedy admission control method that rejects all new VM requests that do not fit in the
 # current cloud capacity.
 GreedyRejectionAllocation <- function(t, state, name="greedy-reject", mem.considered=F) {
-  state <- PriorityScheduling(t, state, state$demand, state$totalCapacity)
+  state <- PriorityScheduling(t, state, state$demand, state$totalCapacity, state$totalMemCapacity)
   state$rejected.id <- (filter(state$demand, submitTime == t, !(id %in% state$allocated.id)))$id
   state$method <- name
   return(state)
@@ -417,8 +418,7 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
     vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
-    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T,
-                sep = ",")
+    write_csv(vm.av.summary, vm.av.summary.file)
   }
   
   return(vm.av.summary)
@@ -426,8 +426,9 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
 
 # Writes the output results in a file for each time window.
 WriteResults <- function(t, stats, out.file, first) {
-  write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first,
-              sep = ",")
+  #write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first,
+  #            sep = ",")
+  write_csv(stats, out.file, append = !first)
 }
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.
@@ -451,7 +452,7 @@ Main <- function(argv=NULL) {
   opts <- add_argument(opts, "--mem-capacity-factor",
                        help = "Decimal factor applied to the original \
   	                           cloud memory capacity. A factor = 1 simulates the cloud with the \
-                               same memory capacity found in the traces.", default = 1,
+                               same memory capacity found in the traces.", default = 1, 
                        short = "-mcf")
 
   opts <- add_argument(opts, "--cpu-load-factor",

@@ -12,7 +12,8 @@ Main <- function(argv) {
     gc()
     vm.av.summary <- SummarizeVmAvailability(av.file)
     vm.av.summary.file <- paste(av.file, "vm-avail-summary.txt", sep="_")
-    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T)
+    write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T,
+                sep=",")
   }
 }
 
