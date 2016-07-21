@@ -11,7 +11,7 @@ Main <- function(argv) {
   for (av.file in av.files) {
     gc()
     vm.av.summary <- SummarizeVmAvailability(av.file)
-    vm.av.summary.file <- paste(av.file, "vm-avail-summary.txt", sep="_")
+    vm.av.summary.file <- paste(av.file, "vm-avail-summary.csv", sep="_")
     write.table(vm.av.summary, vm.av.summary.file, quote=F, row.names=F, col.names=T,
                 sep=",")
   }
