@@ -1,6 +1,7 @@
 # This file contains utils functions that are common for different scripts.
 library(dplyr)
 library(readr)
+library(foreach)
 
 USER_CLASSES <- c("prod", "batch", "free")
 slo.scenario <- 1
@@ -168,7 +169,7 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
                              userClass.levels=c("prod", "batch", "free")) {
   stats <- foreach(file = stats.files, .combine=rbind) %do% {
     if (endsWith(file, "csv")) {
-      df <- read_csv(file)
+      df <- read.csv(file, header=T)
     } else {
       df <- read.table(file, header=T)
     }
