@@ -480,6 +480,10 @@ Main <- function(argv=NULL) {
   opts <- add_argument(opts, "--output-file-prefix",
                        help = "Prefix for the CSV file name output file with simulation results",
                        default = "res", "-o")
+  
+  opts <- add_argument(opts, "--summarize-vm-availability",
+                       help = "Prefix for the CSV file name output file with simulation results",
+                       flag = TRUE, short = "-sva")
 
   # assign the options to variable
   params <- parse_args(opts, argv)
@@ -547,8 +551,8 @@ Main <- function(argv=NULL) {
                 ExecuteResourceAllocation(tasks, capacities, max.time, method.f, output.file,
                                           bundle = bundle == "bundle", cpu_capacity_factor, seed,
                                           interval.size, slo_scenario, cpu_load_factor,
-                                          write.vm.summary = T, mem_capacity_factor, consider_mem,
-                                          mem_load_factor))
+                                          summarize_vm_availability, mem_capacity_factor,
+                                          consider_mem, mem_load_factor))
   
   return(state)
 }
