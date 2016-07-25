@@ -31,7 +31,7 @@ do
                 do
                     for s in $SLO_SCENARIO
                     do
-                        echo $m -ccf $ccf -clf $CPU_LOAD_FACTOR -mcf $MEM_CAPACITY_FACTOR -mlf $MEM_LOAD_FACTOR -s $SLO_SCENARIO $CONSIDER_MEM
+                        echo $m -ccf $ccf -clf $clf -mcf $mcf -mlf $mlf -s $s $CONSIDER_MEM
                     done
                 done
             done
