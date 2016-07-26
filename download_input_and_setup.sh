@@ -2,5 +2,4 @@ wget --no-check-certificate http://www.lsd.ufcg.edu.br/~marcus/cloudrm-sim/cloud
 tar xvzf cloudrm-input-data-google.tar.gz && rm cloudrm-input-data-google.tar.gz
 mkdir output 2> /dev/null
 mkdir plots 2> /dev/null
-sudo apt-get install libcurl4-gnutls-dev
 Rscript install_R_packages.R

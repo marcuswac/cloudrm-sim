@@ -17,7 +17,6 @@ suppressPackageStartupMessages(library(RSQLite))
 suppressPackageStartupMessages(library(foreach))
 suppressPackageStartupMessages(library(forecast))
 suppressPackageStartupMessages(library(argparser))
-suppressPackageStartupMessages(library(readr))
 
 source("src/admission_control_utils.R")
 
@@ -418,7 +417,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
   if (write.vm.summary) {
     vm.av.summary <- SummarizeVmAvailability(vm.av.file)
     vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
-    write_csv(vm.av.summary, vm.av.summary.file)
+    write.table(vm.av.summary, vm.av.summary.file, col.names = T, quote = F, row.names = F,
+                sep = ",")
   }
   
   return(vm.av.summary)
@@ -426,9 +426,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
 
 # Writes the output results in a file for each time window.
 WriteResults <- function(t, stats, out.file, first) {
-  #write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first,
-  #            sep = ",")
-  write_csv(stats, out.file, append = !first)
+  write.table(stats, out.file, append = !first, quote = F, row.names = F, col.names = first,
+              sep = ",")
 }
 
 # Main function used to run the simulations. The simulator parameters are passed as arguments.

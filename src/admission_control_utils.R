@@ -1,6 +1,5 @@
 # This file contains utils functions that are common for different scripts.
 library(dplyr)
-library(readr)
 library(foreach)
 
 USER_CLASSES <- c("prod", "batch", "free")
