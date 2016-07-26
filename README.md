@@ -8,7 +8,13 @@ Cloud resource management simulator
 
 ## Setup environment
 
-After having *R* installed, you need to download the input data, create the directory structure
+Clone the repository to your local machine:
+
+````
+git clone https://github.com/marcuswac/cloudrm-sim.git
+```
+
+After having [*R*](https://cran.r-project.org/) installed, you need to download the input data, create the directory structure
 and install *R* packages. In order to do that, go the root directory and run this script:
 
 ```
