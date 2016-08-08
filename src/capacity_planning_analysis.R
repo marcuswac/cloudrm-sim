@@ -365,7 +365,7 @@ CapacityObjectiveFunction <- function(x, df, ob.min = 1, upper.fraction = 100) {
 FindBestCapacity <- function(input.df, lower.fraction=0, upper.fraction=100, precision=.05, ob.min=1,
                              tolerance=.001) {
   for (cf in seq(lower.fraction, upper.fraction, precision)) {
-    df2 <- mutate(input.df, capacity.rem.res.mean = (capacity.rem.res.mean / cpu.capacity.factor) * cf)
+    df2 <- mutate(input.df, capacity.rem.res.mean = (capacity.rem.res.mean / res.capacity.factor) * cf)
     ob.est <- filter(CalculateApproximationSummary(df2), model == "G/GI/c/K")$ob.est
     if (all(ob.est + tolerance >= ob.min)) {
       return(cf)
@@ -381,8 +381,8 @@ LoadModelInputData <- function(tasks, input.res.files)  {
   #####
   
   stats.tasks <- tasks %>%
-    select(userClass, submitTime, endTime, runtime, cpuReq, memReq) %>%
     filter(submitTime > 1 | endTime != -1) %>%
+    select(userClass, runtime, cpuReq, memReq) %>%
     collect(n = Inf) %>%
     #mutate(endTime = ifelse(endTime == -1, max(submitTime), endTime)) %>%
     group_by(userClass) %>%
@@ -393,22 +393,9 @@ LoadModelInputData <- function(tasks, input.res.files)  {
               cpuReq=mean(cpuReq),
               memReq=mean(memReq))
   
-  stats.interarrival <- tasks %>%
-    select(submitTime, userClass, cpuReq, memReq) %>%
-    filter(submitTime > 0, cpuReq > 0) %>%
-    collect(n = Inf) %>%
-    group_by(userClass) %>%
-    transmute(iat.cpu=c(NA, diff(submitTime/min5))/cpuReq,
-              iat.mem=c(NA, diff(submitTime/min5))/memReq,
-              iat.n=c(NA, diff(submitTime/min5))) %>%
-    summarise(
-      iat.n.mean=mean(iat.n, na.rm=T), iat.n.var=var(iat.n, na.rm=T),
-      iat.cpu.mean=mean(iat.cpu, na.rm=T), iat.cpu.var=var(iat.cpu, na.rm=T),
-      iat.mem.mean=mean(iat.mem, na.rm=T), iat.mem.var=var(iat.mem, na.rm=T))
-  
   tasks.arrivalrates <- tasks %>%
-    select(userClass, submitTime, runtime, endTime, cpuReq, memReq) %>%
     filter(submitTime > 1 | endTime != -1) %>%
+    select(userClass, submitTime, cpuReq, memReq) %>%
     collect(n = Inf) %>%
     group_by(submitTime=ceiling(submitTime/min5), userClass) %>%
     summarise(rate=n(), rate.cpu=sum(cpuReq), rate.mem=sum(memReq)) %>%
@@ -428,8 +415,8 @@ LoadModelInputData <- function(tasks, input.res.files)  {
               total.mem=sum(rate.mem))
   
   stats.permanent <- tasks %>%
-    select(userClass, submitTime, endTime, runtime, cpuReq, memReq) %>%
     filter(submitTime == 0, endTime == -1) %>%
+    select(userClass, cpuReq, memReq) %>%
     group_by(userClass) %>%
     summarise(cpu.permanent=sum(cpuReq),
               mem.permanent=sum(memReq),
@@ -438,10 +425,9 @@ LoadModelInputData <- function(tasks, input.res.files)  {
   
   stats.gtrace <- left_join(stats.tasks, stats.arrivalrates, by="userClass") %>%
     left_join(stats.permanent, by="userClass") %>%
-    left_join(stats.interarrival, by="userClass") %>%
     mutate(permanent.n.share.all = n.permanent / total.tasks,
            permanent.cpu.share.all = cpu.permanent / total.cpu,
-           permanent.mem.share.all = mem.permanent / total.cpu,
+           permanent.mem.share.all = mem.permanent / total.mem,
            userClass = ifelse(userClass == "middle", "batch", userClass))
   
   #####
@@ -549,14 +535,17 @@ LoadModelInputData <- function(tasks, input.res.files)  {
 }
 
 ExecuteCapacityPlanning <- function(tasks, capacity, input.res.files) {
+  print("Loading files and calculating input statistics...")
   input.stats <- LoadModelInputData(tasks, input.res.files)
   
   # saved in: "output/cp_results_stats.csv"
+  print("Performing capacity planning for CPU...")
   res.cpu <- input.stats %>%
     filter(slo.scenario == 1, cpu.capacity.factor != Inf) %>%
     mutate(capacity.rem.res.mean = capacity.rem.cpu.mean,
            res.permanent = cpu.permanent,
-           arrivalrate = arrivalrate.cpu) %>%
+           arrivalrate = arrivalrate.cpu,
+           res.capacity.factor = cpu.capacity.factor) %>%
     group_by(method, cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
              slo.scenario) %>%
     do(data.frame(CalculateApproximationSummary(.),
@@ -567,12 +556,14 @@ ExecuteCapacityPlanning <- function(tasks, capacity, input.res.files) {
     left_join(input.stats, c("method", "cpu.capacity.factor", "mem.capacity.factor", "cpu.load.factor",
                          "mem.load.factor", "slo.scenario", "userClass")) %>%
     mutate(userClass=factor(userClass, levels=c("prod", "batch", "free")))
-    
+  
+  print("Performing capacity planning for Memory...")  
   res <- input.stats %>%
     filter(slo.scenario == 1, cpu.capacity.factor != Inf) %>%
     mutate(capacity.rem.res.mean = capacity.rem.mem.mean,
            res.permanent = mem.permanent,
-           arrivalrate = arrivalrate.mem) %>%
+           arrivalrate = arrivalrate.mem,
+           res.capacity.factor = mem.capacity.factor) %>%
     group_by(method, cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
              slo.scenario) %>%
     do(data.frame(CalculateApproximationSummary(.),
@@ -589,7 +580,8 @@ ExecuteCapacityPlanning <- function(tasks, capacity, input.res.files) {
 
 Main <- function(argv) {
   input.res.files <- argv
-  #input.res.files <- "output/res_greedy-norejection_ccf-Inf_clf-1_mcf-Inf_mlf-1_slo-1_cmem-TRUE_ac.csv"
+  #input.res.files <- list.files("output", "res_forecast-ets-quota_ccf-10_clf-1_mcf-1_mlf-.*_slo-1_cmem-TRUE.*_ac.csv", full.names = T)
+  #input.res.files <- c(input.res.files, "output/res_greedy-norejection_ccf-Inf_clf-1_mcf-Inf_mlf-1_slo-1_cmem-TRUE_ac.csv")
   output.file <- "output/cp_results.csv"
   
   tasks <- LoadTaskEvents("data/gtrace_data.sqlite3", from.sqlite=T)

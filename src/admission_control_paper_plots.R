@@ -15,75 +15,225 @@ base.dir <- "."
 
 source("src/admission_control_utils.R")
 
-# revenue per cpu-interval for (prod, batch, free)
-AnalyzeResults <- function(stats, from.files=F) {
-  if (from.files) {
-    stats <- LoadResultsFiles(stats)
-  }
+CalculateStatisticsPerTime <- function(stats) {
+  stats <- stats %>%
+    filter(method != "greedy-reject") %>%
+    group_by(cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
+             slo.scenario, consider.mem, method, time, userClass) %>%
+    mutate(availability=mean(allocated.cpu/(demand.cpu - rejected.cpu), na.rm=T),
+           obtainability=mean(1 - rejected.cpu/arrivals.cpu, na.rm=T)) %>%
+    group_by(cpu.capacity.factor, slo.scenario, method, time) %>%
+    mutate(cum.allocated=cumsum(allocated.cpu),
+           rem.capacity.pred=quota*slo.availability,
+           rem.capacity.pred.error=capacity.rem.cpu-rem.capacity.pred,
+           quota=pmax(0, quota)) %>%
+    group_by(cpu.capacity.factor, slo.scenario, method, userClass) %>%
+    mutate(cum.slo.fulfill=1 - cumsum(vm.slo.violated.n)/cumsum(departures.n),
+           cum.av.mean=cummean(availability),
+           cum.ob.mean=1 - cumsum(rejected.n)/cumsum(arrivals.n))
+  return(stats)
+}
 
-stats.agg <- stats %>%
-             group_by(sample.fraction,seed, method, userClass) %>%
-             summarise(availability=sum(as.numeric(allocated.n))/sum(as.numeric(demand.n - rejected.n)),
-                       obtainability=1 - sum(rejected.cpu)/sum(arrivals.cpu),
-                       vm.availability=weighted.mean(vm.availability.mean, departures.n, na.rm=T),
-                       allocated.cpu.sum=sum(allocated.cpu),
-                       capacity.cpu.sum=sum(capacity.cpu),
-                       utilization.share=allocated.cpu.sum/capacity.cpu.sum,
-                       #vm.availability=weighted.mean(vm.availability.mean, vm.departures, na.rm=T),
-                       max.time=max(time)) %>%
-             group_by(sample.fraction, seed, method) %>%
-             mutate(cum.allocated.cpu=rev(cumsum(rev(allocated.cpu.sum))),
-                    utilization=cum.allocated.cpu/capacity.cpu.sum)
+CalculateStatisticsPerClass <- function(stats) {
+  stats.class <- stats %>%
+    group_by(cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
+             slo.scenario, consider.mem, method, userClass, slo.availability) %>%
+    summarise(capacity.rem.cpu.mean=mean(capacity.rem.cpu),
+              demand.cpu.mean=mean(demand.cpu),
+              nqueue.cpu.mean=mean(demand.cpu-allocated.cpu),
+              av.mean=mean(availability, na.rm=T),
+              av.median=median(availability, na.rm=T),
+              av.q25=quantile(availability, .25, na.rm=T),
+              av.q75=quantile(availability, .75, na.rm=T),
+              av.min=min(availability),
+              av.max=max(availability),
+              ob.mean=sum(arrivals.n - rejected.n) / sum(arrivals.n),
+              vm.availability=weighted.mean(vm.availability.mean, departures.n),
+              vm.slo.fulfillment=weighted.mean(1 - vm.slo.violated.n/departures.n,
+                                               departures.n, na.rm=T)) %>%
+    mutate(av.mean = ifelse(ob.mean >= 0, av.mean, NaN),
+           slo.scenario.str=factor(slo.scenario, levels=c(3, 2, 1, 4, 5),
+                                   labels=c("very low", "low", "medium", "high", "very high")))
+  return(stats.class)
+}
+
+CalculateOverallStatistics <- function(stats) {
+  stats.all <- stats %>%
+    filter(method != "greedy-reject") %>%
+    group_by(cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
+             slo.scenario, consider.mem, method, time) %>%
+    summarise(utilization=sum(allocated.cpu)/max(capacity.rem.cpu),
+              slo.violated.n=sum(vm.slo.violated.n), departures.n=sum(departures.n),
+              admission.rate=sum(arrivals.n - rejected.n) / sum(arrivals.n),
+              arrivals.n=sum(arrivals.n)) %>%
+    summarise(utilization.mean=mean(utilization), utilization.sd=sd(utilization),
+              utilization.error=qnorm(.975) * utilization.sd / sqrt(n()),
+              utilization.lower=utilization.mean - utilization.error,
+              utilization.upper=utilization.mean + utilization.error,
+              slo.fulfillment=weighted.mean(1 - slo.violated.n/departures.n,
+                                            departures.n, na.rm=T),
+              admission.rate=weighted.mean(admission.rate, arrivals.n, na.rm=T)) %>%
+    mutate(slo.scenario.str=factor(slo.scenario, levels=c(3, 2, 1, 4, 5),
+                                   labels=c("very-low", "low", "medium", "high", "very-high")))
+    
+    
+  return(stats.all)
+}
+
+PlotResults <- function(results.files=list.files("output", "res_.*_ac.csv$",
+                                                 full.names=T),
+                        plots.dir="./plots", cpu.capacity.inf = 10, mem.capacity.inf = 10) {
   
-  return(stats.agg)
+  stats <- LoadResultsFiles(results.files)
+  stats <- CalculateStatisticsPerTime(stats)
+  stats.class <- CalculateStatisticsPerClass(stats)
+  stats.all <- CalculateOverallStatistics(stats)
+  stats.all.gather <- gather(stats.all, "metric.name", "metric.value", slo.fulfillment, admission.rate) %>%
+                      mutate(metric.name=factor(metric.name, levels=c("slo.fulfillment", "admission.rate"),
+                                                labels=c("Availability SLO fulfillment", "Admission rate")))
+  
+  plot.height <- 3.5
+  plot.width <- 6
+  plot.margin <- unit(c(1, 1, 1, 1), "mm")
+  dodge <- position_dodge(width=.9)
+  
+  df.plot <- filter(stats.class, cpu.capacity.factor == 1, mem.capacity.factor == 1,
+                            cpu.load.factor = 1, mem.load.factor = 1, slo.scenario = 1,
+                            consider.mem = T, method != "greedy-reject") %>%
+             gather(metric, value, vm.slo.fulfillment, ob.mean) %>%
+             mutate(metric=factor(metric, levels=c("vm.slo.fulfillment", "ob.mean"),
+                                  labels=c("SLO fulfillment", "Admission rate")))
+          
+  p <- ggplot(df.plot, aes(method, value, fill=method)) +
+    geom_bar(stat="identity", width = .8) +
+    #geom_text(aes(label=sprintf("%1.1f%%", 100*value)), size=3, vjust=-.2) +
+    geom_text(aes(label=paste(round(100*value, 1), "%", sep="")), size=3, vjust=-.3) +
+    scale_y_continuous("Availability SLO fulfillment", breaks=seq(0, 1, .1), limits=c(0, 1.05), labels=percent) +
+    scale_fill_brewer(palette="Spectral") +
+    facet_grid(metric~userClass) +
+    theme(axis.title.x = element_blank(), legend.position = "none",
+          axis.text.x = element_text(angle = 25, hjust=1), plot.margin=plot.margin,
+          strip.text.y = element_blank())
+  p
+  plot.file <- paste(plots.dir, "ac_slo-fulfillment_admission-rate_cf1.png", sep="/")
+  png(plot.file, width=7.5, height=5.5, units="in", res=300)
+  g <- ggplotGrob(p)
+  yax <- which(g$layout$name=="ylab")
+  g[["grobs"]][[yax]]$label <- c("Admission rate", "Availability SLO fulfillment")
+  g[["grobs"]][[yax]]$y <- grid::unit(c(0.25, 0.75), "npc")
+  grid.newpage()
+  grid.draw(g)
+  dev.off()
+  
+  
+  df.plot <- filter(df.plot, cpu.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3),
+                    mem.capacity.factor == 1, cpu.load.factor == 1, mem.load.factor == 1,
+                    slo.scenario == 1, consider.mem == T)
+  
+  p <- ggplot(df.plot, aes(cpu.capacity.factor, metric.value, col=method, pch=method, group=method)) +
+    geom_line(alpha=.3) +
+    geom_point(size=4, alpha=.8) +
+    scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Metric value", breaks=seq(0, 1, .1), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    facet_grid(~ metric.name) +
+    theme(panel.grid.minor.x = element_blank(), plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_metrics_cfs_agg.png", sep="/")
+  ggsave(plot.file, p, width=7.5, height=3)
+  
+  df.plot <- stats.all.gather %>% 
+             filter(cpu.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3),
+                    mem.capacity.factor == 1, cpu.load.factor == 1, mem.load.factor == 1,
+                    slo.scenario == 1, consider.mem == T)
+  
+  p <- ggplot(df.plot, aes(cpu.capacity.factor, utilization.mean, col=method, pch=method,
+                           group=method)) +
+    geom_line(alpha=.3) +
+    #geom_errorbar(aes(ymin=utilization.lower, ymax=utilization.upper), width=.7, alpha=.6) + 
+    geom_point(size=4, alpha=.8) +
+    scale_x_discrete("Capacity size factor") +
+    scale_y_continuous("Mean cloud utilization", breaks=seq(0, 1, .02), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    theme(legend.position = "right", plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_utilization_cfs.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.5)
+  
+  
+  
+  p <- ggplot(filter(df.plot, capacity.fraction == 1, cpureq.factor == 1),
+              aes(slo.scenario.str, metric.value, col=method, pch=method, group=method)) +
+    geom_line(alpha=.3) +
+    geom_point(size=4, alpha=.8) +
+    scale_x_discrete("SLO strength") +
+    scale_y_continuous("Metric value", breaks=seq(0, 1, .05), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    facet_grid(~ metric.name) +
+    theme(panel.grid.minor.x = element_blank(), plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_metrics_slos_agg.png", sep="/")
+  ggsave(plot.file, p, width=7.5, height=3)
+  
+  p <- ggplot(filter(ac.res.all, capacity.fraction == 1, cpureq.factor == 1),
+              aes(slo.scenario.str, utilization.mean, col=method, pch=method,
+                  group=method)) +
+    geom_line(alpha=.3) +
+    #geom_errorbar(aes(ymin=utilization.lower, ymax=utilization.upper), width=.5, alpha=.6) + 
+    geom_point(size=4, alpha=.8) +
+    scale_x_discrete("SLO Strength") +
+    scale_y_continuous("Mean cloud utilization", breaks=seq(.9, 1, .005), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    theme(legend.position = "right", plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_utilization_slos.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.5)
+  
+  p <- ggplot(filter(df.plot, slo.scenario == 1, capacity.fraction == 1,
+                     cpureq.factor %in% c(0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)),
+              aes(cpureq.factor, metric.value, col=method, pch=method, group=method)) +
+    geom_line(alpha=.3) +
+    geom_point(size=4, alpha=.8) +
+    scale_x_continuous("Load factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Metric value", breaks=seq(0, 1, .1), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    facet_grid(~ metric.name) +
+    theme(panel.grid.minor.x = element_blank(), plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_metrics_loadfactor_agg.png", sep="/")
+  ggsave(plot.file, p, width=7.5, height=3)
+  
+  
+  p <- ggplot(filter(ac.res.all, slo.scenario == 1, capacity.fraction == 1,
+                     cpureq.factor %in% c(0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)),
+              aes(cpureq.factor, utilization.mean, col=method, pch=method,
+                  group=method)) +
+    geom_line(alpha=.3) +
+    #geom_errorbar(aes(ymin=utilization.lower, ymax=utilization.upper), width=.5, alpha=.6) + 
+    geom_point(size=4, alpha=.8) +
+    scale_x_continuous("Load factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Mean cloud utilization", breaks=seq(.7, 1, .02), labels=percent) +
+    scale_color_brewer("Heuristic:", palette="Spectral") +
+    scale_shape("Heuristic:") +
+    theme(legend.position = "right", plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_utilization_loadfactor.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.5)
+
 }
 
-AnalyzeWorkload <- function(tasks, capacities) {
-  av <- tasks %>%
-        group_by(userClass) %>%
-        summarise(runtime=mean(runtime)/60000000, elapsedTime=mean(elapsedTime)/60000000,
-                  availability=mean(runtime/elapsedTime))
-}
-
-PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
+PlotResultsOld <- function(results.files=list.files("output", "res_.*_ac.txt$",
                                                  full.names=T),
                         plots.dir="./plots") {
   
   stats <- LoadResultsFiles(results.files)
-  
-  stats <- stats %>%
-           filter(method != "greedy-reject") %>%
-           group_by(cpu.capacity.factor, slo.scenario, method, time, userClass) %>%
-           mutate(availability=mean(allocated.cpu/(demand.cpu - rejected.cpu), na.rm=T),
-                  obtainability=mean(1 - rejected.cpu/arrivals.cpu, na.rm=T)) %>%
-           group_by(cpu.capacity.factor, slo.scenario, method, time) %>%
-           mutate(cum.allocated=cumsum(allocated.cpu),
-                  rem.capacity.pred=quota*slo.availability,
-                  rem.capacity.pred.error=capacity.rem.cpu-rem.capacity.pred,
-                  quota=pmax(0, quota)) %>%
-          group_by(cpu.capacity.factor, slo.scenario, method, userClass) %>%
-          mutate(cum.slo.fulfill=1 - cumsum(vm.slo.violated.n)/cumsum(departures.n),
-                 cum.av.mean=cummean(availability),
-                 cum.ob.mean=1 - cumsum(rejected.n)/cumsum(arrivals.n))
-  
-  stats.agg <- stats %>%
-               group_by(cpu.capacity.factor, slo.scenario, method, userClass, slo.availability) %>%
-               summarise(capacity.rem.cpu.mean=mean(capacity.rem.cpu),
-                        demand.cpu.mean=mean(demand.cpu),
-                        nqueue.cpu.mean=mean(demand.cpu-allocated.cpu),
-                        av.mean=mean(availability, na.rm=T),
-                        av.median=median(availability, na.rm=T),
-                        av.q25=quantile(availability, .25, na.rm=T),
-                        av.q75=quantile(availability, .75, na.rm=T),
-                        av.min=min(availability),
-                        av.max=max(availability),
-                        ob.mean=sum(arrivals.n - rejected.n) / sum(arrivals.n),
-                        vm.availability=weighted.mean(vm.availability.mean, departures.n),
-                        vm.slo.fulfillment=weighted.mean(1 - vm.slo.violated.n/departures.n,
-                                                           departures.n, na.rm=T)) %>%
-              mutate(av.mean = ifelse(ob.mean >= 0, av.mean, NaN),
-                     slo.scenario.str=factor(slo.scenario, levels=c(3, 2, 1, 4, 5),
-                                             labels=c("very low", "low", "medium", "high", "very high")))
+  stats <- CalculateGeneralStatistics(stats)
+  stats.class <- CalculateStatisticsPerClass(stats)
   
   plot.height <- 3.5
   plot.width <- 6
@@ -91,9 +241,9 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   
   # Base scenario analysis
   
-  stats.agg.cf1 <- filter(stats.agg, cpu.capacity.factor == 1, slo.scenario == 1,
+  stats.class.cf1 <- filter(stats.class, cpu.capacity.factor == 1, slo.scenario == 1,
                           method != "greedy-reject")
-  p <- ggplot(stats.agg.cf1, aes(method, ob.mean, fill=method)) +
+  p <- ggplot(stats.class.cf1, aes(method, ob.mean, fill=method)) +
     geom_bar(stat="identity") +
     geom_text(aes(label=sprintf("%1.1f%%", 100*ob.mean)), size=2.8, vjust=0) +
     scale_y_continuous("Admission rate", breaks=seq(0, 1, .1), labels=percent) +
@@ -105,7 +255,7 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   plot.file <- paste(plots.dir, "ac_obtainability_cf1.png", sep="/")
   ggsave(plot.file, p, width=6, height=plot.height)
   
-  p <- ggplot(stats.agg.cf1, aes(method, vm.slo.fulfillment, fill=method)) +
+  p <- ggplot(stats.class.cf1, aes(method, vm.slo.fulfillment, fill=method)) +
     geom_bar(stat="identity") +
     geom_text(aes(label=sprintf("%1.1f%%", 100*vm.slo.fulfillment)), size=2.8, vjust=0) +
     scale_y_continuous("SLO fulfillment", breaks=seq(0, 1, .1), labels=percent) +
@@ -117,10 +267,10 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   plot.file <- paste(plots.dir, "ac_availability_cf1.png", sep="/")
   ggsave(plot.file, p, width=6, height=plot.height)
   
-  stats.agg.cf1.g <- gather(stats.agg.cf1, metric, value, vm.slo.fulfillment, ob.mean) %>%
+  stats.class.cf1.g <- gather(stats.class.cf1, metric, value, vm.slo.fulfillment, ob.mean) %>%
                      mutate(metric=factor(metric, levels=c("vm.slo.fulfillment", "ob.mean"),
                                           labels=c("SLO fulfillment", "Admission rate")))
-  p <- ggplot(stats.agg.cf1.g, aes(method, value, fill=method)) +
+  p <- ggplot(stats.class.cf1.g, aes(method, value, fill=method)) +
     geom_bar(stat="identity") +
     geom_text(aes(label=sprintf("%1.1f%%", 100*value)), size=2.8, vjust=-.2) +
     scale_y_continuous("SLO fulfillment", breaks=seq(0, 1, .1), limits=c(0, 1.05), labels=percent) +
@@ -144,11 +294,11 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   
   # Capacity planning analysis
   
-  stats.agg.f <- stats.agg %>%
+  stats.class.f <- stats.class %>%
                  filter(slo.scenario == 1, method != "greedy-reject") %>%
                  mutate(vm.slo.fulfillment = ifelse(ob.mean < 0, NaN, vm.slo.fulfillment))
   
-  p <- ggplot(stats.agg.f, aes(cpu.capacity.factor, ob.mean, col=method, pch=method, group=method)) +
+  p <- ggplot(stats.class.f, aes(cpu.capacity.factor, ob.mean, col=method, pch=method, group=method)) +
     geom_line(alpha=.3) +
     geom_point(size=4, alpha=.8) +
     scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
@@ -161,7 +311,7 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   plot.file <- paste(plots.dir, "ac_obtainability_cfs.png", sep="/")
   ggsave(plot.file, p, width=6, height=plot.height)
 
-  p <- ggplot(stats.agg.f, aes(cpu.capacity.factor, vm.slo.fulfillment, col=method, pch=method, group=method)) +
+  p <- ggplot(stats.class.f, aes(cpu.capacity.factor, vm.slo.fulfillment, col=method, pch=method, group=method)) +
     geom_line(alpha=.3) +
     geom_point(size=4, alpha=.8) +
     scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
@@ -208,60 +358,6 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
            profit.abs = ifelse(profit > 0, profit, -1),
            cpu.capacity.factor.str = paste("CSF: ", cpu.capacity.factor, sep=""))
   
-  vm.summary.files <- paste(results.files, "_vm-avail-summary.txt", sep="")
-  #list.files("output", "res55_is-300000000.*vm-avail-summary.txt$", full.names=T)
-  vm.summary <- LoadResultsFiles(vm.summary.files)
-  
-  vm.summary <- vm.summary %>%
-    filter(method != "greedy-reject") %>%
-    mutate(vm.profit.total=vm.revenue.total - vm.penalty.total)
-  
-  vm.summary.agg <- vm.summary %>%
-    group_by(cpu.capacity.factor, slo.scenario, method) %>%
-    summarise(revenue=sum(vm.revenue.total),
-              penalty=sum(vm.penalty.total),
-              profit=sum(vm.profit.total)) %>%
-    group_by(cpu.capacity.factor, slo.scenario) %>%
-    mutate(profit.max=max(profit), profit.efficiency=profit / profit.max,
-           slo.scenario.str=factor(slo.scenario, levels=c(3, 2, 1, 4, 5),
-                                   labels=c("very-low", "low", "medium", "high", "very-high")),
-           cpu.capacity.factor.str=paste("CSF: ", cpu.capacity.factor, sep=""))
-  
-  p <- ggplot(filter(vm.summary.agg, slo.scenario == 1),
-              aes(cpu.capacity.factor, fill=method)) +
-    #geom_hline(aes(yintercept=c(0, 1)), lty=2, col="grey") +
-    geom_bar(aes(y=profit.efficiency), stat="identity", position="dodge", width=.08) +
-    scale_x_continuous("Capacity size factor", breaks=seq(0.7, 1.3, .1)) +
-    scale_y_continuous("Profit efficiency", breaks=seq(0, 1, .1), labels=percent) +
-    scale_fill_brewer("Heuristic:", palette="Spectral") +
-    #scale_fill_manual(values = brewer.pal(4, "Spectral")[2:4]) +
-    coord_trans(limy=c(-.05, 1.05)) +
-    #facet_grid(~cpu.capacity.factor.str) +
-    theme(legend.position = "right",
-          #axis.text.x = element_blank(), axis.title.x = element_blank(),
-          plot.margin=plot.margin)
-  p
-  plot.file <- paste(plots.dir, "ac_profit_cfs.png", sep="/")
-  ggsave(plot.file, p, width=6, height=2.2)
-  
-  
-  p <- ggplot(filter(vm.summary.agg, cpu.capacity.factor == 1),
-              aes(slo.scenario.str, fill=method)) +
-    #geom_hline(aes(yintercept=c(0, 1)), lty=2, col="grey") +
-    geom_bar(aes(y=profit.efficiency), stat="identity", position="dodge", width=.8) +
-    scale_x_discrete("SLO Strength") +
-    scale_y_continuous("Profit efficiency", breaks=seq(0, 1, .1), labels=percent) +
-    scale_fill_brewer("Heuristic:", palette="Spectral") +
-    #scale_fill_manual(values = brewer.pal(4, "Spectral")[2:4]) +
-    coord_trans(limy=c(-.05, 1.05)) +
-    #facet_grid(~cpu.capacity.factor.str) +
-    theme(legend.position = "right",
-          #axis.text.x = element_blank(), axis.title.x = element_blank(),
-          plot.margin=plot.margin)
-  p
-  plot.file <- paste(plots.dir, "ac_profit_slos.png", sep="/")
-  ggsave(plot.file, p, width=6, height=2.2)
-  
   
   # SLO scenarios analysis
   
@@ -299,7 +395,7 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   ggsave(plot.file, p, width=6, height=2.2)
   
   
-  p <- ggplot(filter(stats.agg, cpu.capacity.factor == 1),
+  p <- ggplot(filter(stats.class, cpu.capacity.factor == 1),
               aes(slo.scenario.str, vm.slo.fulfillment, col=method, pch=method, group=method)) +
     geom_line(alpha=.3) +
     geom_point(size=4, alpha=.8) +
@@ -314,7 +410,7 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   ggsave(plot.file, p, width=6, height=2.2)
   
   
-  p <- ggplot(filter(stats.agg, cpu.capacity.factor == 1, userClass != "prod"),
+  p <- ggplot(filter(stats.class, cpu.capacity.factor == 1, userClass != "prod"),
               aes(slo.scenario.str, ob.mean, col=method, pch=method, group=method)) +
     geom_line(alpha=.3) +
     geom_point(size=4, alpha=.8) +
@@ -409,7 +505,64 @@ PlotResults <- function(results.files=list.files("output", "res_.*_ac.txt$",
   plot.file <- paste(plots.dir, "ac_metrics_slos_agg.png", sep="/")
   ggsave(plot.file, p, width=6, height=3.2)
   
+}
+
+PlotProfitResults <- function(vm.summary.files=list.files("output", "res_.*_vm-avail-summary.txt$",
+                                                       full.names=T),
+                              plots.dir="./plots") {
+
+  #vm.summary.files <- paste(results.files, "_vm-avail-summary.txt", sep="")
+  vm.summary <- LoadResultsFiles(vm.summary.files)
   
+  vm.summary <- vm.summary %>%
+    filter(method != "greedy-reject") %>%
+    mutate(vm.profit.total=vm.revenue.total - vm.penalty.total)
+  
+  vm.summary.agg <- vm.summary %>%
+    group_by(cpu.capacity.factor, slo.scenario, method) %>%
+    summarise(revenue=sum(vm.revenue.total),
+              penalty=sum(vm.penalty.total),
+              profit=sum(vm.profit.total)) %>%
+    group_by(cpu.capacity.factor, slo.scenario) %>%
+    mutate(profit.max=max(profit), profit.efficiency=profit / profit.max,
+           slo.scenario.str=factor(slo.scenario, levels=c(3, 2, 1, 4, 5),
+                                   labels=c("very-low", "low", "medium", "high", "very-high")),
+           cpu.capacity.factor.str=paste("CSF: ", cpu.capacity.factor, sep=""))
+  
+  p <- ggplot(filter(vm.summary.agg, slo.scenario == 1),
+              aes(cpu.capacity.factor, fill=method)) +
+    #geom_hline(aes(yintercept=c(0, 1)), lty=2, col="grey") +
+    geom_bar(aes(y=profit.efficiency), stat="identity", position="dodge", width=.08) +
+    scale_x_continuous("Capacity size factor", breaks=seq(0.7, 1.3, .1)) +
+    scale_y_continuous("Profit efficiency", breaks=seq(0, 1, .1), labels=percent) +
+    scale_fill_brewer("Heuristic:", palette="Spectral") +
+    #scale_fill_manual(values = brewer.pal(4, "Spectral")[2:4]) +
+    coord_trans(limy=c(-.05, 1.05)) +
+    #facet_grid(~cpu.capacity.factor.str) +
+    theme(legend.position = "right",
+          #axis.text.x = element_blank(), axis.title.x = element_blank(),
+          plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_profit_cfs.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.2)
+  
+  
+  p <- ggplot(filter(vm.summary.agg, cpu.capacity.factor == 1),
+              aes(slo.scenario.str, fill=method)) +
+    #geom_hline(aes(yintercept=c(0, 1)), lty=2, col="grey") +
+    geom_bar(aes(y=profit.efficiency), stat="identity", position="dodge", width=.8) +
+    scale_x_discrete("SLO Strength") +
+    scale_y_continuous("Profit efficiency", breaks=seq(0, 1, .1), labels=percent) +
+    scale_fill_brewer("Heuristic:", palette="Spectral") +
+    #scale_fill_manual(values = brewer.pal(4, "Spectral")[2:4]) +
+    coord_trans(limy=c(-.05, 1.05)) +
+    #facet_grid(~cpu.capacity.factor.str) +
+    theme(legend.position = "right",
+          #axis.text.x = element_blank(), axis.title.x = element_blank(),
+          plot.margin=plot.margin)
+  p
+  plot.file <- paste(plots.dir, "ac_profit_slos.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.2)
   
 }
 
@@ -450,14 +603,17 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 }
 
 Main <- function(argv) {
-  if (length(argv) > 0) {
-    results.files <- argv  
-  } else {
-    results.files <- list.files("output", "res_mem.*_ac.txt$", full.names=T)
-  }
+  results.files <- argv  
+  plot.profit.analysis <- TRUE
   
-  PlotResults(results.files = results.files, plots.dir = "./plots/") 
+  PlotResults(results.files = results.files, plots.dir = "./plots/")
+  if (plot.profit.analysis) {
+    vm.summary.files <- paste(results.files, "_vm-avail-summary.csv", sep="")
+    PlotProfitResults(vm.summary.files, plots.dir = "./plots/")
+  }
 }
 
 argv <- commandArgs(TRUE)
-#Main(argv)
+if (length(argv) > 0) {
+  Main(argv)
+}

@@ -419,6 +419,8 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
     vm.av.summary.file <- paste(out.file, "vm-avail-summary.csv", sep="_")
     write.table(vm.av.summary, vm.av.summary.file, col.names = T, quote = F, row.names = F,
                 sep = ",")
+  } else {
+    vm.av.summary <- NA
   }
   
   return(vm.av.summary)
