@@ -393,6 +393,19 @@ LoadModelInputData <- function(tasks, input.res.files)  {
               cpuReq=mean(cpuReq),
               memReq=mean(memReq))
   
+  stats.interarrival <- tasks %>%
+    select(submitTime, userClass, cpuReq, memReq) %>%
+    filter(submitTime > 0, cpuReq > 0) %>%
+    collect(n = Inf) %>%
+    group_by(userClass) %>%
+    transmute(iat.cpu=c(NA, diff(submitTime/min5))/cpuReq,
+              iat.mem=c(NA, diff(submitTime/min5))/memReq,
+              iat.n=c(NA, diff(submitTime/min5))) %>%
+    summarise(
+      iat.n.mean=mean(iat.n, na.rm=T), iat.n.var=var(iat.n, na.rm=T),
+      iat.cpu.mean=mean(iat.cpu, na.rm=T), iat.cpu.var=var(iat.cpu, na.rm=T),
+      iat.mem.mean=mean(iat.mem, na.rm=T), iat.mem.var=var(iat.mem, na.rm=T))
+  
   tasks.arrivalrates <- tasks %>%
     filter(submitTime > 1 | endTime != -1) %>%
     select(userClass, submitTime, cpuReq, memReq) %>%
@@ -425,6 +438,7 @@ LoadModelInputData <- function(tasks, input.res.files)  {
   
   stats.gtrace <- left_join(stats.tasks, stats.arrivalrates, by="userClass") %>%
     left_join(stats.permanent, by="userClass") %>%
+    left_join(stats.interarrival, by="userClass") %>%
     mutate(permanent.n.share.all = n.permanent / total.tasks,
            permanent.cpu.share.all = cpu.permanent / total.cpu,
            permanent.mem.share.all = mem.permanent / total.mem,

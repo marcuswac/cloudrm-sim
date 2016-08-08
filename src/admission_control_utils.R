@@ -167,6 +167,7 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
                                              "pred-cmean", "pred-ets"),
                              userClass.levels=c("prod", "batch", "free")) {
   stats <- foreach(file = stats.files, .combine=rbind) %do% {
+    print(paste("Loading results file:", file))
     if (endsWith(file, "csv")) {
       df <- read.csv(file, header=T)
     } else {

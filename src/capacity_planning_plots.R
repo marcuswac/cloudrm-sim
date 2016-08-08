@@ -57,7 +57,7 @@ PlotCapacityPlanningResults <- function(input.res) {
   ggsave(plot.file, p, width=6, height=6.5)
   
   df.plot %>%
-    group_by(userClass, model) %>%
+    group_by(userClass) %>%
     summarise(round(max(abs(ob.cpu.mean - ob.est))*100, 1), round(mean(abs(ob.cpu.mean - ob.est))*100, 1))
   
   
@@ -112,8 +112,8 @@ PlotCapacityPlanningResults <- function(input.res) {
   p <- ggplot(df.plot, aes(mem.capacity.factor, demand.mem.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4, alpha=.8) +
-    geom_line(aes(y=admitted.est.all.cpu, col="model", lty="model")) +
-    geom_point(aes(y=admitted.est.all.cpu, col="model", pch="model"), size=4, alpha=.8) +
+    geom_line(aes(y=admitted.est.all.mem, col="model", lty="model")) +
+    geom_point(aes(y=admitted.est.all.mem, col="model", pch="model"), size=4, alpha=.8) +
     scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
     scale_y_continuous("Mean demand") +
     facet_wrap(~userClass, ncol=1, scale="free_y") +
@@ -125,8 +125,8 @@ PlotCapacityPlanningResults <- function(input.res) {
   ggsave(plot.file, p, width=6, height=6.5)
   
   df.plot %>%
-    group_by(userClass, model) %>%
-    summarise(round(max(abs(ob.cpu.mean - ob.est))*100, 1), round(mean(abs(ob.cpu.mean - ob.est))*100, 1))
+    group_by(userClass) %>%
+    summarise(round(max(abs(ob.cpu.mean - ob.est.cpu))*100, 1), round(mean(abs(ob.cpu.mean - ob.est.cpu))*100, 1))
   
   
   df.plot <- input.res %>%
@@ -136,7 +136,7 @@ PlotCapacityPlanningResults <- function(input.res) {
            mem.load.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
     mutate(mem.load.factor.str = paste("load factor =", mem.load.factor))
   
-  p <- ggplot(df.plot, aes(mem.load.factor, ob.cpu.mean, col="simulation", lty="simulation", pch="simulation")) +
+  p <- ggplot(df.plot, aes(mem.load.factor, ob.mem.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
     geom_line(aes(y=ob.est.mem, col="model", lty="model")) +
@@ -155,17 +155,18 @@ PlotCapacityPlanningResults <- function(input.res) {
   ggsave(plot.file, p, width=6, height=6.5)
   
   
-  # Capacity planning  
+  # CPU Capacity planning
   df.plot %>%
-    group_by(userClass, model) %>%
-    summarise(round(max(abs(ob.cpu.mean - ob.est))*100, 1), round(mean(abs(ob.cpu.mean - ob.est))*100, 1))
+    group_by(userClass) %>%
+    summarise(round(max(abs(ob.cpu.mean - ob.est.cpu))*100, 1), round(mean(abs(ob.cpu.mean - ob.est.cpu))*100, 1))
   
   df.plot <- input.res %>%
     filter(method == "pred-ets", slo.scenario == 1, 
            cpu.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
-           #cpu.load.factor %in% c(.5, .75, 1, 1.25, 1.5, 1.75, 2),
-           mem.capacity.factor == 10, mem.load.factor == 1) %>%
-    group_by(cpu.capacity.factor, cpu.load.factor, mem.capacity.factor, mem.load.factor, slo.scenario) %>%
+           mem.capacity.factor == 10,
+           cpu.load.factor %in% c(.5, .75, 1, 1.25, 1.5, 1.75, 2),
+           mem.load.factor == 1) %>%
+    group_by(cpu.load.factor, cpu.capacity.factor) %>%
     summarise(best.cpu.capacity=min(best.cpu.capacity.01), fulfilled=all(ob.cpu.mean >= c(.999, .99, 0))) %>%
     filter(fulfilled) %>%
     summarise(sim.best.capacity=min(cpu.capacity.factor), model.best.capacity=min(best.cpu.capacity))
@@ -182,7 +183,34 @@ PlotCapacityPlanningResults <- function(input.res) {
     scale_linetype_manual("", values = c(2, 1)) +
     theme(plot.margin = plot.margin)
   p
-  plot.file <- paste(plots.dir, "cp_loadfactor_bestcapacity_estimations.png", sep="/")
+  plot.file <- paste(plots.dir, "cp_cpu_loadfactor_bestcapacity_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=2.5)
+  
+  # Memory Capacity planning
+  df.plot <- input.res %>%
+             filter(method == "pred-ets", slo.scenario == 1,
+                    cpu.capacity.factor == 10,
+                    mem.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
+                    cpu.load.factor == 1,
+                    mem.load.factor %in% as.character(c(.5, .75, 1, 1.25, 1.5, 1.75, 2))) %>%
+    group_by(mem.load.factor, mem.capacity.factor) %>%
+    summarise(best.mem.capacity=min(best.mem.capacity.01), fulfilled=all(ob.mem.mean >= c(.999, .99, 0))) %>%
+    filter(fulfilled) %>%
+    summarise(sim.best.capacity=min(mem.capacity.factor), model.best.capacity=min(best.mem.capacity))
+  
+  p <- ggplot(df.plot, aes(mem.load.factor, sim.best.capacity, col = "simulation", lty = "simulation", pch="simulation")) +
+    geom_line() +
+    geom_point(size=4) +
+    geom_line(aes(y=model.best.capacity, col = "model", lty = "model")) +
+    geom_point(aes(y=model.best.capacity, col = "model", pch = "model"), size=4, alpha=.8) +
+    scale_x_continuous("Load factor", breaks=seq(0, 3, .25)) +
+    scale_y_continuous("Best capacity size factor", breaks=seq(0, 3, .2)) +
+    scale_color_discrete("") +
+    scale_shape_discrete("") +
+    scale_linetype_manual("", values = c(2, 1)) +
+    theme(plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_mem_loadfactor_bestcapacity_estimations.png", sep="/")
   ggsave(plot.file, p, width=6, height=2.5)
   
 }
@@ -716,7 +744,8 @@ BestCapacityDelayProbability <- function(demand, z, pw.target=.1, slo.availabili
 }
 
 Main <- function(argv) {
-  res.file <- argv
+  #res.file <- argv
+  res.file <- "output/cp_results.csv"
   
   input.res <- read.csv(res.file, header = T)
   PlotCapacityPlanningResults(input.res)
