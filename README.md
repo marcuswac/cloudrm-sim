@@ -5,7 +5,7 @@ Cloud resource management simulator
 ## Dependencies
 
 - [*R*](https://cran.r-project.org/) 3.2.x or higher.
-- [*SQLite 3*](https://www.sqlite3.org/download). 
+- [*SQLite 3*](https://www.sqlite.org/download.html). 
 
 ## Setup environment
 
