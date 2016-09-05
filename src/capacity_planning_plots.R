@@ -1,11 +1,28 @@
-###########
-# Plots
-###########
+#!/usr/bin/env Rscript
+
+library(RColorBrewer)
+library(grid)
+library(gridExtra)
+library(scales)
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
 
 plots.dir <- "plots/"
 
+LoadCapacityPlanningResults <- function(input.res.file) {
+  input.res <- read.csv(input.res.file, header = T)
+  if (!("arrivalrate.sensibility" %in% input.res)) {
+    input.res$arrivalrate.sensibility <- 1
+    input.res$capacity.sensibility <- 1
+    input.res$runtime.sensibility <- 1
+  }
+  return(input.res)
+} 
+
 PlotCapacityPlanningResults <- function(input.res) {
   input.res$userClass <- factor(input.res$userClass, levels=c("prod", "batch", "free"))
+  
   data.frame(input.res %>%
                filter(slo.scenario == 1, method == "pred-ets",
                       #model == "G/GI/c/K",
@@ -15,54 +32,66 @@ PlotCapacityPlanningResults <- function(input.res) {
                          error.abs.mean=round(mean(abs(ob.cpu.mean-ob.est.cpu)), 3),
                          error.abs.max=round(max(abs(ob.cpu.mean-ob.est.cpu)), 3)))
   
-  
   plot.margin <- unit(c(1, 1, 1, 1), "mm")
   
+  # CPU analysis
   df.plot <- input.res %>%
     filter(between(cpu.capacity.factor, .6, 1.3), method == "pred-ets", slo.scenario == 1,
-           cpu.load.factor == 1, mem.load.factor == 1, mem.capacity.factor == 10) %>%
+           model == "G/GI/c/K", cpu.load.factor == 1, mem.load.factor == 1, mem.capacity.factor == 10,
+           arrivalrate.sensibility == 1, capacity.sensibility == 1, runtime.sensibility == 1) %>%
     group_by(cpu.capacity.factor) %>%
     mutate(total.capacity=max(capacity.rem.cpu.mean))
   
-  # CPU analysis
+  df.plot.mmck <- input.res %>%
+    filter(between(cpu.capacity.factor, .6, 1.3), method == "pred-ets", slo.scenario == 1,
+           cpu.load.factor == 1, mem.load.factor == 1, mem.capacity.factor == 10,
+           arrivalrate.sensibility == 1, capacity.sensibility == 1, runtime.sensibility == 1,
+           model == "M/M/c/K") %>%
+    group_by(cpu.capacity.factor) %>%
+    mutate(total.capacity=max(capacity.rem.cpu.mean))
+  
   p <- ggplot(df.plot, aes(cpu.capacity.factor, ob.cpu.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=ob.est.cpu, col="model", lty="model")) +
-    geom_point(aes(y=ob.est.cpu, col="model", pch="model"), size=4, alpha=.8) +
-    facet_wrap(~userClass, ncol=1) +
-    scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
+    geom_line(aes(y=ob.est.cpu, col=model, lty=model, group=model)) +
+    geom_point(aes(y=ob.est.cpu, col=model, pch=model, group=model), size=4, alpha=.8) +
+    #geom_line(aes(y=ob.est.cpu, col=model, lty=model, group=model), data = df.plot.mmck) +
+    #geom_point(aes(y=ob.est.cpu, col=model, pch=model, group=model), data = df.plot.mmck, size=4, alpha=.8) +
+    #facet_wrap(~userClass, ncol=1) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("CPU capacity size factor", breaks=seq(0, 2, .1)) +
     scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1)) +
-    theme(plot.margin = plot.margin)
+    scale_linetype_manual("", values = c(2, 3, 1)) +
+    #theme(legend.position = "right", plot.margin = plot.margin)
+    theme(legend.position = "top", plot.margin = plot.margin)
   p
-  plot.file <- paste(plots.dir, "cp_capacity_admissionrate_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=6.5)
+  plot.file <- paste(plots.dir, "cp_cpu_capacity_admissionrate_estimations.png", sep="/")
+  #ggsave(plot.file, p, width=6, height=6.5)
+  ggsave(plot.file, p, width=6, height=3.5)
 
   p <- ggplot(df.plot, aes(cpu.capacity.factor, demand.cpu.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4, alpha=.8) +
-    geom_line(aes(y=admitted.est.all.cpu, col="model", lty="model")) +
-    geom_point(aes(y=admitted.est.all.cpu, col="model", pch="model"), size=4, alpha=.8) +
-    scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
+    geom_line(aes(y=admitted.est.all.cpu, col=model, lty=model)) +
+    geom_point(aes(y=admitted.est.all.cpu, col=model, pch=model), size=4, alpha=.8) +
+    scale_x_continuous("CPU capacity size factor", breaks=seq(0, 2, .1)) +
     scale_y_continuous("Mean demand") +
     facet_wrap(~userClass, ncol=1, scale="free_y") +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1))
+    scale_linetype_manual("", values = c(2, 3, 1))
   p
-  plot.file <- paste(plots.dir, "cp_capacity_demand_estimations.png", sep="/")
+  plot.file <- paste(plots.dir, "cp_cpu_capacity_demand_estimations.png", sep="/")
   ggsave(plot.file, p, width=6, height=6.5)
   
   df.plot %>%
     group_by(userClass) %>%
-    summarise(round(max(abs(ob.cpu.mean - ob.est))*100, 1), round(mean(abs(ob.cpu.mean - ob.est))*100, 1))
-  
+    summarise(round(max(abs(ob.cpu.mean - ob.est.cpu))*100, 1), round(mean(abs(ob.cpu.mean - ob.est.cpu))*100, 1))
   
   df.plot <- input.res %>%
-    filter(method == "pred-ets", slo.scenario == 1, 
+    filter(method == "pred-ets", slo.scenario == 1,  model == "G/GI/c/K",
            cpu.capacity.factor == 1, mem.capacity.factor == 10, mem.load.factor == 1,
            cpu.load.factor %in% c(.7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
     mutate(cpu.load.factor.str = paste("load factor =", cpu.load.factor))
@@ -70,90 +99,204 @@ PlotCapacityPlanningResults <- function(input.res) {
   p <- ggplot(df.plot, aes(cpu.load.factor, ob.cpu.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=ob.est.cpu, col="model", lty="model")) +
-    geom_point(aes(y=ob.est.cpu, col="model", pch="model"), size=4, alpha=.8) +
+    geom_line(aes(y=ob.est.cpu, col=model, lty=model)) +
+    geom_point(aes(y=ob.est.cpu, col=model, pch=model), size=4, alpha=.8) +
     #geom_vline(aes(xintercept=best.capacity), lty=2) +
-    facet_wrap(~userClass, ncol=1) +
+    #facet_wrap(~userClass, ncol=1) +
+    facet_wrap(~userClass, nrow=1) +
     #facet_grid(userClass~capacity.fraction) +
-    scale_x_continuous("Load factor", breaks=seq(0, 3, .1)) +
+    scale_x_continuous("CPU load factor", breaks=seq(0, 3, .1)) +
     scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1)) +
-    theme(legend.position = "right", plot.margin = plot.margin)
+    scale_linetype_manual("", values = c(2, 3, 1)) +
+    #theme(legend.position = "right", plot.margin = plot.margin)
+    theme(legend.position = "top", plot.margin = plot.margin)
   p
-  plot.file <- paste(plots.dir, "cp_loadfactor_admissionrate_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=6.5)
-  
+  plot.file <- paste(plots.dir, "cp_cpu_loadfactor_admissionrate_estimations.png", sep="/")
+  #ggsave(plot.file, p, width=6, height=6.5)
+  ggsave(plot.file, p, width=6, height=3.5)
 
   # Memory: what-if analysis
   df.plot <- input.res %>%
-    filter(between(mem.capacity.factor, .5, 1.4), method == "pred-ets", slo.scenario == 1,
-           cpu.load.factor == 1, mem.load.factor == 1, cpu.capacity.factor == 10) %>%
+    filter(between(mem.capacity.factor, .5, 1.3), method == "pred-ets", slo.scenario == 1,
+           model == "G/GI/c/K", cpu.load.factor == 1, mem.load.factor == 1,
+           cpu.capacity.factor == 10) %>%
     group_by(mem.capacity.factor) %>%
     mutate(total.capacity=max(capacity.rem.mem.mean))
   
   p <- ggplot(df.plot, aes(mem.capacity.factor, ob.mem.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=ob.est.mem, col="model", lty="model")) +
-    geom_point(aes(y=ob.est.mem, col="model", pch="model"), size=4, alpha=.8) +
-    facet_wrap(~userClass, ncol=1) +
-    scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
+    geom_line(aes(y=ob.est.mem, col=model, lty=model)) +
+    geom_point(aes(y=ob.est.mem, col=model, pch=model), size=4, alpha=.8) +
+    #facet_wrap(~userClass, ncol=1) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("Memory capacity size factor", breaks=seq(0, 2, .1)) +
     scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1)) +
-    theme(plot.margin = plot.margin)
+    scale_linetype_manual("", values = c(2, 3, 1)) +
+    #theme(legend.position = "right", plot.margin = plot.margin)
+    theme(legend.position = "top", plot.margin = plot.margin, text = element_text(size=11))
   p
-  plot.file <- paste(plots.dir, "cp_capacity_admissionrate_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=6.5)
+  plot.file <- paste(plots.dir, "cp_mem_capacity_admissionrate_estimations.png", sep="/")
+  #ggsave(plot.file, p, width=6, height=6.5)
+  ggsave(plot.file, p, width=6, height=3.5)
   
   p <- ggplot(df.plot, aes(mem.capacity.factor, demand.mem.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4, alpha=.8) +
-    geom_line(aes(y=admitted.est.all.mem, col="model", lty="model")) +
-    geom_point(aes(y=admitted.est.all.mem, col="model", pch="model"), size=4, alpha=.8) +
-    scale_x_continuous("Capacity size factor", breaks=seq(0, 2, .1)) +
+    geom_line(aes(y=admitted.est.all.mem, col=model, lty=model)) +
+    geom_point(aes(y=admitted.est.all.mem, col=model, pch=model), size=4, alpha=.8) +
+    scale_x_continuous("Memory capacity size factor", breaks=seq(0, 2, .1)) +
     scale_y_continuous("Mean demand") +
     facet_wrap(~userClass, ncol=1, scale="free_y") +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1))
+    scale_linetype_manual("", values = c(2, 3, 1))
   p
-  plot.file <- paste(plots.dir, "cp_capacity_demand_estimations.png", sep="/")
+  plot.file <- paste(plots.dir, "cp_mem_capacity_demand_estimations.png", sep="/")
   ggsave(plot.file, p, width=6, height=6.5)
   
   df.plot %>%
     group_by(userClass) %>%
     summarise(round(max(abs(ob.cpu.mean - ob.est.cpu))*100, 1), round(mean(abs(ob.cpu.mean - ob.est.cpu))*100, 1))
   
-  
   df.plot <- input.res %>%
-    filter(method == "pred-ets", slo.scenario == 1, 
+    filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
            cpu.capacity.factor == 10, mem.capacity.factor == 1, cpu.load.factor == 1,
-           #model == "G/GI/c/K",
-           mem.load.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
+           mem.load.factor %in% c(.8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
     mutate(mem.load.factor.str = paste("load factor =", mem.load.factor))
   
   p <- ggplot(df.plot, aes(mem.load.factor, ob.mem.mean, col="simulation", lty="simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=ob.est.mem, col="model", lty="model")) +
-    geom_point(aes(y=ob.est.mem, col="model", pch="model"), size=4, alpha=.8) +
+    geom_line(aes(y=ob.est.mem, col=model, lty=model)) +
+    geom_point(aes(y=ob.est.mem, col=model, pch=model), size=4, alpha=.8) +
     #geom_vline(aes(xintercept=best.capacity), lty=2) +
-    facet_wrap(~userClass, ncol=1) +
+    #facet_wrap(~userClass, ncol=1) +
+    facet_wrap(~userClass, nrow=1) +
     #facet_grid(userClass~capacity.fraction) +
-    scale_x_continuous("Load factor", breaks=seq(0, 3, .1)) +
+    scale_x_continuous("Memory load factor", breaks=seq(0, 3, .1)) +
     scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1)) +
-    theme(legend.position = "right", plot.margin = plot.margin)
+    scale_linetype_manual("", values = c(2, 3, 1)) +
+    #theme(legend.position = "right", plot.margin = plot.margin)
+    theme(legend.position = "top", plot.margin = plot.margin, text = element_text(size=11))
   p
-  plot.file <- paste(plots.dir, "cp_loadfactor_admissionrate_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=6.5)
+  plot.file <- paste(plots.dir, "cp_mem_loadfactor_admissionrate_estimations.png", sep="/")
+  #ggsave(plot.file, p, width=6, height=6.5)
+  ggsave(plot.file, p, width=6, height=3.5)
   
+  ############
+  # What-if analysis when both resources are bottlenecks (conflicts)
+  ############
+  
+  # Changing CPU load, but memory causing conflicts
+  df.plot <- input.res %>%
+    filter(between(cpu.capacity.factor, .6, 1.3), method == "pred-ets", slo.scenario == 1,
+           model == "G/GI/c/K", cpu.load.factor == 1, mem.load.factor == 1, mem.capacity.factor == 1,
+           arrivalrate.sensibility == 1, capacity.sensibility == 1, runtime.sensibility == 1) %>%
+    group_by(cpu.capacity.factor) %>%
+    mutate(total.capacity=max(capacity.rem.cpu.mean),
+           ob.mean.worst = pmax(0, ob.est.cpu + ob.est.mem - 1),
+           ob.mean.best = pmin(ob.est.cpu, ob.est.mem))
+  
+  p <- ggplot(df.plot, aes(cpu.capacity.factor)) +
+    geom_line(aes(y=ob.cpu.mean, col="simulation", lty="simulation"), alpha=.6) +
+    geom_point(aes(y=ob.cpu.mean, col="simulation", lty="simulation", shape="simulation"), size=4) +
+    geom_errorbar(aes(ymin=ob.cpu.mean, ymax=ob.mean.best, col=model, fill=model, lty=model,
+                    group=model, shape=model)) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("CPU capacity size factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
+    scale_color_discrete("") +
+    scale_shape_manual("", values = c(NA, 1)) +
+    scale_linetype_manual("", values = c(1, 2)) +
+    theme(legend.position = "top", plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_conflicts_cpu_capacity_admissionrate_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=3.5)
+  
+  df.plot <- input.res %>%
+    filter(method == "pred-ets", slo.scenario == 1,  model == "G/GI/c/K",
+           cpu.capacity.factor == 1, mem.capacity.factor == 1, mem.load.factor == 1,
+           cpu.load.factor %in% c(.7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
+    mutate(cpu.load.factor.str = paste("load factor =", cpu.load.factor),
+           ob.mean.worst = pmax(0, ob.est.cpu + ob.est.mem - 1),
+           ob.mean.best = pmin(ob.est.cpu, ob.est.mem))
+  
+  p <- ggplot(df.plot, aes(cpu.load.factor)) +
+    geom_line(aes(y=ob.cpu.mean, col="simulation", lty="simulation"), alpha=.6) +
+    geom_point(aes(y=ob.cpu.mean, col="simulation", lty="simulation", shape="simulation"), size=4) +
+    geom_errorbar(aes(ymin=ob.cpu.mean, ymax=ob.mean.best, col=model, fill=model, lty=model,
+                      group=model, shape=model)) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("CPU load factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
+    scale_color_discrete("") +
+    scale_shape_manual("", values = c(NA, 1)) +
+    scale_linetype_manual("", values = c(1, 2)) +
+    theme(legend.position = "top", plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_conflicts_cpu_loadfactor_admissionrate_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=3.5)
+  
+  # Memory: what-if analysis
+  df.plot <- input.res %>%
+    filter(between(mem.capacity.factor, .5, 1.3), method == "pred-ets", slo.scenario == 1,
+           model == "G/GI/c/K", cpu.load.factor == 1, mem.load.factor == 1,
+           cpu.capacity.factor == 1) %>%
+    group_by(mem.capacity.factor) %>%
+    mutate(total.capacity=max(capacity.rem.mem.mean),
+           ob.mean.worst = pmax(0, ob.est.cpu + ob.est.mem - 1),
+           ob.mean.best = pmin(ob.est.cpu, ob.est.mem))
+  
+  p <- ggplot(df.plot, aes(mem.capacity.factor)) +
+    geom_line(aes(y=ob.mem.mean, col="simulation", lty="simulation"), alpha=.6) +
+    geom_point(aes(y=ob.mem.mean, col="simulation", lty="simulation", shape="simulation"), size=4) +
+    geom_errorbar(aes(ymin=ob.mem.mean, ymax=ob.mean.best, col=model, fill=model, lty=model,
+                      group=model, shape=model)) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("Memory capacity size factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
+    scale_color_discrete("") +
+    scale_shape_manual("", values = c(NA, 1)) +
+    scale_linetype_manual("", values = c(1, 2)) +
+    theme(legend.position = "top", plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_conflicts_mem_capacity_admissionrate_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=3.5)
+  
+  df.plot <- input.res %>%
+    filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
+           cpu.capacity.factor == 1, mem.capacity.factor == 1, cpu.load.factor == 1,
+           mem.load.factor %in% c(.8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)) %>%
+    mutate(mem.load.factor.str = paste("load factor =", mem.load.factor),
+           ob.mean.worst = pmax(0, ob.est.cpu + ob.est.mem - 1),
+           ob.mean.best = pmin(ob.est.cpu, ob.est.mem))
+  
+  p <- ggplot(df.plot, aes(mem.load.factor)) +
+    geom_line(aes(y=ob.mem.mean, col="simulation", lty="simulation"), alpha=.6) +
+    geom_point(aes(y=ob.mem.mean, col="simulation", lty="simulation", shape="simulation"), size=4) +
+    geom_errorbar(aes(ymin=ob.mem.mean, ymax=ob.mean.best, col=model, fill=model, lty=model,
+                      group=model, shape=model)) +
+    facet_wrap(~userClass, nrow=1) +
+    scale_x_continuous("Memory load factor", breaks=seq(0, 2, .1)) +
+    scale_y_continuous("Admission rate", label=percent, breaks=seq(0, 1, .1)) +
+    scale_color_discrete("") +
+    scale_shape_manual("", values = c(NA, 1)) +
+    scale_linetype_manual("", values = c(1, 2)) +
+    theme(legend.position = "top", plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_conflicts_mem_loadfactor_admissionrate_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=3.5)
+  
+  ############
+  # Capacity planning analysis
+  ############
   
   # CPU Capacity planning
   df.plot %>%
@@ -161,12 +304,12 @@ PlotCapacityPlanningResults <- function(input.res) {
     summarise(round(max(abs(ob.cpu.mean - ob.est.cpu))*100, 1), round(mean(abs(ob.cpu.mean - ob.est.cpu))*100, 1))
   
   df.plot <- input.res %>%
-    filter(method == "pred-ets", slo.scenario == 1, 
+    filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
            cpu.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
            mem.capacity.factor == 10,
            cpu.load.factor %in% c(.5, .75, 1, 1.25, 1.5, 1.75, 2),
            mem.load.factor == 1) %>%
-    group_by(cpu.load.factor, cpu.capacity.factor) %>%
+    group_by(model, cpu.load.factor, cpu.capacity.factor) %>%
     summarise(best.cpu.capacity=min(best.cpu.capacity.01), fulfilled=all(ob.cpu.mean >= c(.999, .99, 0))) %>%
     filter(fulfilled) %>%
     summarise(sim.best.capacity=min(cpu.capacity.factor), model.best.capacity=min(best.cpu.capacity))
@@ -174,26 +317,27 @@ PlotCapacityPlanningResults <- function(input.res) {
   p <- ggplot(df.plot, aes(cpu.load.factor, sim.best.capacity, col = "simulation", lty = "simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=model.best.capacity, col = "model", lty = "model")) +
-    geom_point(aes(y=model.best.capacity, col = "model", pch = "model"), size=4, alpha=.8) +
-    scale_x_continuous("Load factor", breaks=seq(0, 3, .25)) +
-    scale_y_continuous("Best capacity size factor", breaks=seq(0, 3, .2)) +
+    geom_line(aes(y=model.best.capacity, col = model, lty = model)) +
+    geom_point(aes(y=model.best.capacity, col = model, pch = model), size=4, alpha=.8) +
+    scale_x_continuous("CPU load factor", breaks=seq(0, 3, .25)) +
+    scale_y_continuous("Best CPU capacity factor", breaks=seq(0, 3, .2)) +
+    coord_trans(limy = c(.5, 2.19)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
-    scale_linetype_manual("", values = c(2, 1)) +
+    scale_linetype_manual("", values = c(2, 3, 1)) +
     theme(plot.margin = plot.margin)
   p
   plot.file <- paste(plots.dir, "cp_cpu_loadfactor_bestcapacity_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=2.5)
+  ggsave(plot.file, p, width=6, height=3)
   
   # Memory Capacity planning
   df.plot <- input.res %>%
-             filter(method == "pred-ets", slo.scenario == 1,
+             filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
                     cpu.capacity.factor == 10,
                     mem.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
                     cpu.load.factor == 1,
                     mem.load.factor %in% as.character(c(.5, .75, 1, 1.25, 1.5, 1.75, 2))) %>%
-    group_by(mem.load.factor, mem.capacity.factor) %>%
+    group_by(model, mem.load.factor, mem.capacity.factor) %>%
     summarise(best.mem.capacity=min(best.mem.capacity.01), fulfilled=all(ob.mem.mean >= c(.999, .99, 0))) %>%
     filter(fulfilled) %>%
     summarise(sim.best.capacity=min(mem.capacity.factor), model.best.capacity=min(best.mem.capacity))
@@ -201,17 +345,90 @@ PlotCapacityPlanningResults <- function(input.res) {
   p <- ggplot(df.plot, aes(mem.load.factor, sim.best.capacity, col = "simulation", lty = "simulation", pch="simulation")) +
     geom_line() +
     geom_point(size=4) +
-    geom_line(aes(y=model.best.capacity, col = "model", lty = "model")) +
-    geom_point(aes(y=model.best.capacity, col = "model", pch = "model"), size=4, alpha=.8) +
-    scale_x_continuous("Load factor", breaks=seq(0, 3, .25)) +
-    scale_y_continuous("Best capacity size factor", breaks=seq(0, 3, .2)) +
+    geom_line(aes(y=model.best.capacity, col = model, lty = model)) +
+    geom_point(aes(y=model.best.capacity, col = model, pch = model), size=4, alpha=.8) +
+    scale_x_continuous("Memory load factor", breaks=seq(0, 3, .25)) +
+    scale_y_continuous("Best memory capacity factor", breaks=seq(0, 3, .2)) +
+    coord_trans(limy = c(.5, 2.19)) +
+    scale_color_discrete("") +
+    scale_shape_discrete("") +
+    scale_linetype_manual("", values = c(2, 3, 1)) +
+    theme(plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_mem_loadfactor_bestcapacity_estimations.png", sep="/")
+  ggsave(plot.file, p, width=6, height=3)
+
+  
+  ############
+  # Capacity planning when both resources are bottlenecks (conflicts)
+  ############
+  
+  # CPU Capacity planning
+
+    df.plot <- input.res %>%
+    filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
+           cpu.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
+           mem.capacity.factor == 1,
+           cpu.load.factor %in% c(.5, .75, 1, 1.25, 1.5, 1.75, 2),
+           mem.load.factor == 1) %>%
+    group_by(model, cpu.load.factor, cpu.capacity.factor) %>%
+    summarise(best.cpu.capacity=min(best.cpu.capacity.01),
+              best.cpu.capacity.worstcase=min(best.cpu.capacity.worstcase.01),
+              fulfilled=all(ob.cpu.mean >= c(.999, .99, 0))) %>%
+    filter(fulfilled) %>%
+    summarise(sim.best.capacity=min(cpu.capacity.factor), model.best.capacity=min(best.cpu.capacity),
+              model.best.capacity.worstcase=min(best.cpu.capacity.worstcase))
+  
+  p <- ggplot(df.plot, aes(cpu.load.factor, sim.best.capacity, col = "simulation", lty = "simulation", pch="simulation")) +
+    geom_line(alpha=.7) +
+    geom_point(size=4, alpha=.8) +
+    geom_line(aes(y=model.best.capacity.worstcase, col = model, lty = model), alpha=.7) +
+    #geom_point(aes(y=model.best.capacity, col = model, pch = model), size=4, alpha=.8) +
+    geom_point(aes(y=model.best.capacity.worstcase, col = model, pch = model), size=4, alpha=.8) +
+    scale_x_continuous("CPU load factor", breaks=seq(0, 3, .25)) +
+    scale_y_continuous("Best CPU capacity factor", breaks=seq(0, 3, .2)) +
+    coord_trans(limy = c(.5, 2.19)) +
+    scale_color_discrete("") +
+    scale_shape_discrete("") +
+    scale_linetype_manual("", values = c(2, 1)) +
+    theme(plot.margin = plot.margin)
+  p
+  plot.file <- paste(plots.dir, "cp_cpu_loadfactor_bestcapacity_estimations.png", sep="/")
+  #ggsave(plot.file, p, width=6, height=3)
+  
+  # Memory Capacity planning
+  df.plot <- input.res %>%
+    filter(method == "pred-ets", slo.scenario == 1, model == "G/GI/c/K",
+           cpu.capacity.factor == 1.1,
+           mem.capacity.factor %in% c(.6, .7, .8, .9, 1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5),
+           cpu.load.factor == 1,
+           mem.load.factor %in% c(.5, .75, 1, 1.25, 1.5, 1.75, 2)) %>%
+    group_by(model, mem.load.factor, mem.capacity.factor) %>%
+    summarise(best.mem.capacity=min(best.mem.capacity.01),
+              best.mem.capacity.worstcase=min(best.mem.capacity.worstcase.01),
+              fulfilled=all(ob.mem.mean >= c(.999, .99, 0))) %>%
+    filter(fulfilled) %>%
+    summarise(sim.best.capacity=min(mem.capacity.factor), 
+              model.best.capacity.worstcase=min(best.mem.capacity.worstcase),
+              model.best.capacity=min(best.mem.capacity))
+  
+  p <- ggplot(df.plot, aes(mem.load.factor, sim.best.capacity, col = "simulation", lty = "simulation", pch="simulation")) +
+    geom_line(alpha=.7) +
+    geom_point(size=4, alpha=.8) +
+    geom_line(aes(y=model.best.capacity.worstcase, col = model, lty = model), alpha=.7) +
+    #geom_point(aes(y=model.best.capacity, col = model, pch = model), size=4, alpha=.8) +
+    geom_point(aes(y=model.best.capacity.worstcase, col = model, pch = model), size=4, alpha=.8) +
+    scale_x_continuous("Memory load factor", breaks=seq(0, 3, .25)) +
+    scale_y_continuous("Best memory capacity factor", breaks=seq(0, 3, .2)) +
+    coord_trans(limy = c(.5, 2.19)) +
     scale_color_discrete("") +
     scale_shape_discrete("") +
     scale_linetype_manual("", values = c(2, 1)) +
     theme(plot.margin = plot.margin)
   p
   plot.file <- paste(plots.dir, "cp_mem_loadfactor_bestcapacity_estimations.png", sep="/")
-  ggsave(plot.file, p, width=6, height=2.5)
+  #ggsave(plot.file, p, width=6, height=3)
+  
   
 }
 
@@ -744,10 +961,8 @@ BestCapacityDelayProbability <- function(demand, z, pw.target=.1, slo.availabili
 }
 
 Main <- function(argv) {
-  #res.file <- argv
-  res.file <- "output/cp_results.csv"
-  
-  input.res <- read.csv(res.file, header = T)
+  input.res.file <- argv
+  input.res <- LoadCapacityPlanningResults(input.res.file)
   PlotCapacityPlanningResults(input.res)
   
 }

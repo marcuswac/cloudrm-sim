@@ -213,6 +213,9 @@ LoadResultsFiles <- function(stats.files=list.files("output", "res22_ac_.*0.5.*"
         df$cpuReq <- NA
       }
     }
+    if (!("consider.mem" %in% colnames(df))) {
+      df$consider.mem <- TRUE
+    }
     df
   }
   stats$method <- factor(stats$method, levels=method.levels, labels=method.labels)

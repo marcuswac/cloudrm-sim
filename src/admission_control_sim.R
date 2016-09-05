@@ -79,7 +79,7 @@ QuotaAdmissionControl <- function(t, demand, state, cpu.quota, mem.quota=Inf) {
 
 # Performs VM allocations in the current cloud capacity, after applying a quota-based
 # admission control to reject VMs that exceeds the quota for a priority class.
-QuotaAllocation <- function(t, state, quota.fun=GreedyQuotaDefinition, mem.considered=F) {
+QuotaAllocation <- function(t, state, quota.fun=GreedyQuotaDefinition, consider.mem=F) {
   state$remainingCapacity <- state$totalCapacity
   state$remainingMemCapacity <- state$totalMemCapacity
   
@@ -98,9 +98,9 @@ QuotaAllocation <- function(t, state, quota.fun=GreedyQuotaDefinition, mem.consi
     
     # Quota definition
     state <- quota.fun(uc, state, state$remainingCapacity, avTarget,
-                       mem.considered = mem.considered)
+                       consider.mem = consider.mem)
     classCpuQuota <- state$cpu.quota[[uc]]
-    classMemQuota <- ifelse(mem.considered, state$mem.quota[[uc]], Inf)
+    classMemQuota <- ifelse(consider.mem, state$mem.quota[[uc]], Inf)
     
     # Admission control
     admission <- QuotaAdmissionControl(t, demand.uc, state, classCpuQuota, classMemQuota)
@@ -121,7 +121,7 @@ QuotaAllocation <- function(t, state, quota.fun=GreedyQuotaDefinition, mem.consi
 ForecastQuotaDefinition <- function(uc, state, capacity, avTarget, forecast.fun=meanf,
                                     error.correction=T, conf.level=.95,
                                     ts.frequency=24*12, min.train.size=12, max.train.size=30*24*12,
-                                    fcast.h=12, init.safe.margin=.1, mem.considered=F) {
+                                    fcast.h=12, init.safe.margin=.1, consider.mem=F) {
   if (is.null(state$capacity.sample)) {
     state$capacity.sample <- list()
   }
@@ -133,7 +133,7 @@ ForecastQuotaDefinition <- function(uc, state, capacity, avTarget, forecast.fun=
   ts.frequency <- ifelse(length(x) > 2 * ts.frequency, ts.frequency, 1)
   x <- ts(x, frequency=ts.frequency)
    
-  if (mem.considered) {
+  if (consider.mem) {
     if (is.null(state$capacity.sample.mem)) {
       state$capacity.sample.mem <- list()
     }
@@ -149,17 +149,17 @@ ForecastQuotaDefinition <- function(uc, state, capacity, avTarget, forecast.fun=
   sd.q <- .95
   if (x.n >= min.train.size) {
     estimatedCapacity <- tryCatch(min(forecast.fun(x, fcast.h, level=level)))
-    estimatedMemCapacity <- ifelse(!mem.considered, 0,
+    estimatedMemCapacity <- ifelse(!consider.mem, 0,
                                    tryCatch(min(forecast.fun(x.mem, fcast.h, level=level))))
 
     if (error.correction && is.finite(avTarget) && avTarget > 0 && nrow(state$stats) > 0) {
       estimatedCapacity <- estimatedCapacity - sd(x) * qt(sd.q, x.n - 1) * sqrt(1 + 1/x.n)
-      estimatedMemCapacity <- ifelse(!mem.considered, 0,
+      estimatedMemCapacity <- ifelse(!consider.mem, 0,
                                      estimatedMemCapacity - sd(x.mem) * qt(sd.q, x.n - 1) * sqrt(1 + 1/x.n))
     }
   } else {
     estimatedCapacity <- capacity * avTarget
-    estimatedMemCapacity <- ifelse(!mem.considered, 0, state$remainingMemCapacity * avTarget)
+    estimatedMemCapacity <- ifelse(!consider.mem, 0, state$remainingMemCapacity * avTarget)
   }
   
   state$cpu.quota[[uc]] <- max(0, ifelse(avTarget > 0, estimatedCapacity / avTarget, Inf))
@@ -191,7 +191,7 @@ SmoothMeanForecastFunction <- function(x, h, level, train.sizes=c(24*12, 12, 7),
 
 # Method to allocate VMs based on the conservative-mean forecast quota admission control.
 MeanForecastQuotaAllocation <- function(t, state, name="forecast-mean-quota",
-                                        interval.size=300000000, mem.considered=F) {
+                                        interval.size=300000000, consider.mem=F) {
   intervals.perhour <- 3600000000 / interval.size
   intervals.perday <- 24 * intervals.perhour
   days.perweek <- 7
@@ -214,7 +214,7 @@ MeanForecastQuotaAllocation <- function(t, state, name="forecast-mean-quota",
 
 # Method to allocate VMs based on the Exponential Smoothing forecast quota admission control.
 ETSForecastQuotaAllocation <- function(t, state, name="forecast-ets-quota",
-                                       interval.size=300000000, mem.considered=F) {
+                                       interval.size=300000000, consider.mem=F) {
   intervals.perhour <- 3600000000 / interval.size
   intervals.perday <- 24 * intervals.perhour
   
@@ -224,27 +224,27 @@ ETSForecastQuotaAllocation <- function(t, state, name="forecast-ets-quota",
                             min.train.size=intervals.perhour, max.train.size=30*intervals.perday,
                             fcast.h=intervals.perhour)
   }
-  state <- QuotaAllocation(t, state, quota.f, mem.considered=mem.considered)
+  state <- QuotaAllocation(t, state, quota.f, consider.mem=consider.mem)
   state$method <- name
   return(state)
 }
 
 # Greedy method to define the quota for a priority class. It considers only the current
 # available capacity value for a class to define the next quota.
-GreedyQuotaDefinition <- function(uc, state, capacity, avTarget, mem.considered=F) {
+GreedyQuotaDefinition <- function(uc, state, capacity, avTarget, consider.mem=F) {
   state$cpu.quota[[uc]] <- ifelse(avTarget != 0, capacity / avTarget, Inf)
   return(state)
 }
 
 # Method to allocate VMs based on the Greedy-quota admission control.
-GreedyQuotaAllocation <- function(t, state, name="greedy-quota", mem.considered=F) {
+GreedyQuotaAllocation <- function(t, state, name="greedy-quota", consider.mem=F) {
   state <- QuotaAllocation(t, state, quota.fun=GreedyQuotaDefinition)
   state$method = name
   return(state)
 }
 
 # Method to allocate VMs without using admission control (i.e., with no VM rejections)
-GreedyNoRejectionAllocation <- function(t, state, name="greedy-noreject", mem.considered=F) {
+GreedyNoRejectionAllocation <- function(t, state, name="greedy-noreject", consider.mem=F) {
   state <- PriorityScheduling(t, state, state$demand, state$totalCapacity, state$totalMemCapacity)
   state$method <- name
   return(state)
@@ -252,7 +252,7 @@ GreedyNoRejectionAllocation <- function(t, state, name="greedy-noreject", mem.co
 
 # Greedy admission control method that rejects all new VM requests that do not fit in the
 # current cloud capacity.
-GreedyRejectionAllocation <- function(t, state, name="greedy-reject", mem.considered=F) {
+GreedyRejectionAllocation <- function(t, state, name="greedy-reject", consider.mem=F) {
   state <- PriorityScheduling(t, state, state$demand, state$totalCapacity, state$totalMemCapacity)
   state$rejected.id <- (filter(state$demand, submitTime == t, !(id %in% state$allocated.id)))$id
   state$method <- name
@@ -378,7 +378,7 @@ CalculateAllocationStats <- function(t, state, max.time) {
 ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fun, out.file,
                                       bundle=T, cpu.capacity.factor=1, seed, interval.size=300000000,
                                       slo.scenario=1, cpu.load.factor=1, write.vm.summary=F,
-				                              mem.capacity.factor=1, mem.considered=F, mem.load.factor=1) {
+				                              mem.capacity.factor=1, consider.mem=F, mem.load.factor=1) {
   max.time <- min(max.time, max(capacities$interval))
   state <- list(method="", demand=data.frame(), stats=data.frame(), ntasks=0,
                 allocated.id=vector(), rejected.id=vector(),
@@ -389,12 +389,12 @@ ExecuteResourceAllocation <- function(tasks, capacities, max.time, allocation.fu
     state$totalCapacity <- (filter(capacities, interval == t))$cpu
     state$totalMemCapacity <- (filter(capacities, interval == t))$mem
     
-    state <- allocation.fun(t, state, mem.considered=mem.considered)
+    state <- allocation.fun(t, state, consider.mem=consider.mem)
     
     state <- CalculateAllocationStats(t, state, max.time)
     stats <- data.frame(cpu.capacity.factor, mem.capacity.factor, slo.scenario, cpu.load.factor,
-                        mem.load.factor, slo.availability=state$slo.availability, method=state$method,
-                        state$stats.t)
+                        mem.load.factor, slo.availability=state$slo.availability,
+                        consider.mem, method=state$method, state$stats.t)
     state$stats <- rbind(state$stats, stats)
     
     vm.av.file <- paste(out.file, "vm-avail.csv", sep="_")

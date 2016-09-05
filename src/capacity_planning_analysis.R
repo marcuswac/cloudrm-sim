@@ -2,6 +2,7 @@
 
 library(queueing)
 library(RSQLite)
+library(argparser)
 
 source("src/admission_control_utils.R")
 
@@ -314,6 +315,7 @@ CalculateApproximationSummary <- function(df, quota.factor = 1) {
   capacity.total <- df$capacity.rem.res.mean[1] #c
   permanent.cum <- 0
   admittedCum <- 0
+  admittedCum.mmck <- 0
   res.df <- data.frame()
   admitted.est <- 0
   for (i in 1:nrow(df)) {
@@ -322,32 +324,65 @@ CalculateApproximationSummary <- function(df, quota.factor = 1) {
     cs2 <- with(row, runtime.var/(runtime.mean^2))
     permanent.cum <- permanent.cum + row$res.permanent #c
     nservers <- with(row, max(capacity.total - admittedCum - permanent.cum, 0)) * quota.factor
+    nservers.mmck <- with(row, max(capacity.total - admittedCum.mmck - permanent.cum, 0)) * quota.factor
     m <- with(row, nservers / slo.availability - nservers)
+    m.mmck <- with(row, nservers.mmck / slo.availability - nservers.mmck)
     res <- with(row, data.frame(CalculateApproximationStats(m, ca2, cs2, arrivalrate,
                                                             1/runtime.est, nservers, w=1))) #c
      
+      f <- ifelse(nservers.mmck > 100, (nservers.mmck + m.mmck) / 100, nservers.mmck) # reducing number of servers to make feasible
+    if (nservers.mmck > 0 && !is.infinite(nservers.mmck)) {
+      mmck.i <- NewInput.MMCK(row$arrivalrate/f, 1/row$runtime.est, round(nservers.mmck/f),
+                              round((nservers.mmck+m.mmck)/f))
+      mmck.m <- QueueingModel(mmck.i)
+      #mmck.pbl <- last(Qn(mmck.m))
+      mmck.pbl <- last(Pn(mmck.m))
+      admitted.est.mmck <- L(mmck.m)*f
+      rho <- row$arrivalrate * row$runtime.est / nservers.mmck
+      if (rho <= 1) {
+        mmc.i <- NewInput.MMC(row$arrivalrate/f, 1/row$runtime.est, round(nservers.mmck/f),
+                              round(nservers.mmck/f))
+        mmc.m <- QueueingModel(mmc.i)
+        #av.est2 <- 1 - Wq(mmc.m) / W(mmc.m)
+        av.est.mmck <- sum(Pn(mmc.m))
+        av.norej.est.mmck <- av.est.mmck
+      } else {
+        av.est.mmck <- 0
+        av.norej.est.mmck <- 0
+      }
+    } else {
+      mmck.pbl <- 1
+      admitted.est.mmck <- 0
+      av.est.mmck <- 0
+      av.norej.est.mmck <- 0
+    }
+    
     nservers.before <- max(0, capacity.total - admittedCum - permanent.cum + row$res.permanent) #c
+    nservers.before.mmck <- max(0, capacity.total - admittedCum.mmck - permanent.cum + row$res.permanent)
     admitted.permanent <- min(nservers.before, row$res.permanent) #c
     rem.capacity.est <- max(0, capacity.total - admittedCum - permanent.cum + row$res.permanent - admitted.permanent) #c
     demand.est <- row$arrivalrate * row$runtime.est  #c
     ob.est.nonpermanent <- ifelse(!is.na(res) && is.finite(res$pbl), 1 - res$pbl, 0)
     admitted.est <- ifelse(row$method != "no-adm-ctrl", ob.est.nonpermanent * demand.est, demand.est)
     admitted.est.all <- admitted.est + admitted.permanent
+    admitted.est.all.mmck <- admitted.est.mmck + admitted.permanent
     ob.est <- ob.est.nonpermanent
+    ob.est.mmck <- ifelse(is.finite(mmck.pbl), 1 - mmck.pbl, 0)
     av.est <- ifelse(!is.na(res) && is.finite(res$pw) && res$rho <= 1, 1 - res$pw, 0)
     av.norej.est <- ifelse(!is.na(res) && is.finite(res$pw.inf) && res$rho <= 1, 1 - res$pw.inf, 0)
     res.df <- rbind(res.df, data_frame(userClass=row$userClass,
-                                       model="G/GI/c/K",
-                                       nservers.before,
+                                       model=c("G/GI/c/K", "M/M/c/K"),
+                                       nservers.before = c(nservers.before, nservers.before.mmck),
                                        admitted.permanent,
                                        rem.capacity.est,
-                                       admitted.est,
-                                       admitted.est.all,
-                                       ob.est,
-                                       av.est,
-                                       av.norej.est)
+                                       admitted.est = c(admitted.est, admitted.est.mmck),
+                                       admitted.est.all = c(admitted.est.all, admitted.est.all.mmck),
+                                       ob.est = c(ob.est, ob.est.mmck),
+                                       av.est = c(av.est, av.est.mmck),
+                                       av.norej.est = c(av.norej.est, av.norej.est.mmck))
     )
     admittedCum <- admittedCum + max(admitted.est, 0)
+    admittedCum.mmck <- admittedCum.mmck + max(admitted.est.mmck, 0)
   }
   res.df
 }
@@ -374,8 +409,20 @@ FindBestCapacity <- function(input.df, lower.fraction=0, upper.fraction=100, pre
   return(NA)
 }
 
-LoadModelInputData <- function(tasks, input.res.files)  {
-  
+# Adjust the admission rate SLOs when we have multiple resource dimensions being considered.
+# This is a conservative approach, which considers that the sum of VM rejections of all
+# resource types must match the admission rate SLO. Thus, we need that:
+# ndimensions * (1 - adjusted_slo) = 1 - slo
+#
+# Input parameters:
+# slos: admission rate SLO for each class
+# ndimensions: number of resource types (e.g. CPU, memory) considered in the capacity planning
+AdjustSLOsForMultipleDimensions <- function(slos, ndimensions) {
+  adjusted_slos <- ifelse(slos > 0, 1 + (slos - 1) / ndimensions, 0)
+  return(adjusted_slos)
+}
+
+LoadTaskStatistics <- function(tasks, save.csv=F, output.file="output/cp_gtrace_task_stats.csv") {
   #####
   # Generating input statistics for capacity planning model
   #####
@@ -436,13 +483,23 @@ LoadModelInputData <- function(tasks, input.res.files)  {
               n.permanent=n()) %>%
     collect(n = Inf)
   
-  stats.gtrace <- left_join(stats.tasks, stats.arrivalrates, by="userClass") %>%
+  stats.tasks <- left_join(stats.tasks, stats.arrivalrates, by="userClass") %>%
     left_join(stats.permanent, by="userClass") %>%
     left_join(stats.interarrival, by="userClass") %>%
     mutate(permanent.n.share.all = n.permanent / total.tasks,
            permanent.cpu.share.all = cpu.permanent / total.cpu,
            permanent.mem.share.all = mem.permanent / total.mem,
            userClass = ifelse(userClass == "middle", "batch", userClass))
+  
+  if (save.csv) {
+    write.table(stats.tasks, output.file, col.names = T, row.names = F, sep = ",")
+  }
+  
+  return(stats.tasks)
+}
+
+LoadModelInputData <- function(stats.tasks, input.res.files, save.csv = F,
+                               output.file = "output/cp_input_stats.csv")  {
   
   #####
   # Loading admission control simulation results and calculating statistics
@@ -530,7 +587,7 @@ LoadModelInputData <- function(tasks, input.res.files)  {
   #####
   
   input.stats <- stats.agg %>%
-    left_join(stats.gtrace, by="userClass") %>%
+    left_join(stats.tasks, by="userClass") %>%
     group_by(userClass) %>%
     mutate(demand.cpu.var.inf=demand.cpu.var[cpu.capacity.factor == Inf & mem.capacity.factor == Inf],
            demand.cpu.mean.inf=demand.cpu.mean[cpu.capacity.factor == Inf & mem.capacity.factor == Inf],
@@ -545,65 +602,141 @@ LoadModelInputData <- function(tasks, input.res.files)  {
            cpu.permanent = cpu.permanent * cpu.load.factor,
            mem.permanent = mem.permanent * mem.load.factor)
   
+  if (save.csv) {
+    write.table(input.stats, output.file, col.names = T, row.names = F, sep = ",")
+  }
+  
   return(input.stats)
 }
 
-ExecuteCapacityPlanning <- function(tasks, capacity, input.res.files) {
-  print("Loading files and calculating input statistics...")
-  input.stats <- LoadModelInputData(tasks, input.res.files)
+ExecuteCapacityPlanning <- function(input.stats, lower.capacity = 0.1, upper.capacity = 5,
+                                    inc.capacity = 0.01, slo.availability = c(.999, .99, 0),
+                                    slo.tolerance = 0, round.digits = 1,
+                                    sensibility.factors = c(0.5, 1, 1.5)) {
+  print("Generating scenarios...")
+  input.stats <- merge(input.stats,
+                       data.frame(arrivalrate.sensibility = sensibility.factors,
+                                  capacity.sensibility = 1, runtime.sensibility = 1)) %>%
+                 bind_rows(merge(input.stats,
+                                 data.frame(arrivalrate.sensibility = 1,
+                                            capacity.sensibility = sensibility.factors,
+                                            runtime.sensibility = 1))) %>%
+                 bind_rows(merge(input.stats,
+                                 data.frame(arrivalrate.sensibility = 1,
+                                           capacity.sensibility = 1,
+                                           runtime.sensibility = sensibility.factors))) %>%
+                 distinct()
+  
+  print(summary(input.stats$arrivalrate.sensibility))
   
   # saved in: "output/cp_results_stats.csv"
   print("Performing capacity planning for CPU...")
   res.cpu <- input.stats %>%
     filter(slo.scenario == 1, cpu.capacity.factor != Inf) %>%
-    mutate(capacity.rem.res.mean = capacity.rem.cpu.mean,
+    mutate(capacity.rem.res.mean = capacity.rem.cpu.mean * capacity.sensibility,
            res.permanent = cpu.permanent,
-           arrivalrate = arrivalrate.cpu,
+           arrivalrate = arrivalrate.cpu * arrivalrate.sensibility,
+           runtime.est = runtime.est * runtime.sensibility,
            res.capacity.factor = cpu.capacity.factor) %>%
     group_by(method, cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
-             slo.scenario) %>%
+             slo.scenario, arrivalrate.sensibility, capacity.sensibility, runtime.sensibility) %>%
     do(data.frame(CalculateApproximationSummary(.),
-                  best.cpu.capacity.01=FindBestCapacity(., .3, 10, .01, ob.min = c(.999, .99, 0),
-                                                    tolerance = 0))) %>%
-    mutate(best.cpu.capacity=round(best.cpu.capacity.01, 1)) %>%
+                  best.cpu.capacity.01=FindBestCapacity(., lower.capacity, upper.capacity,
+                                                        inc.capacity, ob.min = slo.availability,
+                                                        tolerance = slo.tolerance),
+                  best.cpu.capacity.worstcase.01=FindBestCapacity(., lower.capacity, upper.capacity,
+                                                        inc.capacity,
+                                                        ob.min = AdjustSLOsForMultipleDimensions(slo.availability,
+                                                                                                 ndimensions = 2),
+                                                        tolerance = slo.tolerance))) %>%
+    mutate(best.cpu.capacity=round(best.cpu.capacity.01, round.digits)) %>%
     rename(ob.est.cpu = ob.est, admitted.est.all.cpu = admitted.est.all) %>%
     left_join(input.stats, c("method", "cpu.capacity.factor", "mem.capacity.factor", "cpu.load.factor",
-                         "mem.load.factor", "slo.scenario", "userClass")) %>%
+                         "mem.load.factor", "slo.scenario",
+                         "arrivalrate.sensibility", "capacity.sensibility", "runtime.sensibility",
+                         "userClass")) %>%
     mutate(userClass=factor(userClass, levels=c("prod", "batch", "free")))
   
   print("Performing capacity planning for Memory...")  
   res <- input.stats %>%
     filter(slo.scenario == 1, cpu.capacity.factor != Inf) %>%
-    mutate(capacity.rem.res.mean = capacity.rem.mem.mean,
+    mutate(capacity.rem.res.mean = capacity.rem.mem.mean * capacity.sensibility,
            res.permanent = mem.permanent,
-           arrivalrate = arrivalrate.mem,
+           arrivalrate = arrivalrate.mem * arrivalrate.sensibility,
+           runtime.est = runtime.est * runtime.sensibility,
            res.capacity.factor = mem.capacity.factor) %>%
     group_by(method, cpu.capacity.factor, mem.capacity.factor, cpu.load.factor, mem.load.factor,
-             slo.scenario) %>%
+             slo.scenario, arrivalrate.sensibility, capacity.sensibility, runtime.sensibility) %>%
     do(data.frame(CalculateApproximationSummary(.),
-                  best.mem.capacity.01=FindBestCapacity(., .3, 10, .01, ob.min = c(.999, .99, 0),
-                                                        tolerance = 0))) %>%
+                  best.mem.capacity.01=FindBestCapacity(., lower.capacity, upper.capacity,
+                                                        inc.capacity, ob.min = slo.availability,
+                                                        tolerance = slo.tolerance),
+                  best.mem.capacity.worstcase.01=FindBestCapacity(., lower.capacity, upper.capacity,
+                                                                  inc.capacity,
+                                                                  ob.min = AdjustSLOsForMultipleDimensions(slo.availability,
+                                                                                                           ndimensions = 2),
+                                                                  tolerance = slo.tolerance))) %>%
     mutate(best.mem.capacity=round(best.mem.capacity.01, 1)) %>%
     rename(ob.est.mem = ob.est, admitted.est.all.mem = admitted.est.all) %>%
     left_join(res.cpu, c("method", "cpu.capacity.factor", "mem.capacity.factor", "cpu.load.factor",
-                             "mem.load.factor", "slo.scenario", "userClass")) %>%
+                             "mem.load.factor", "slo.scenario", "model",
+                             "arrivalrate.sensibility", "capacity.sensibility", "runtime.sensibility",
+                             "userClass")) %>%
     mutate(userClass=factor(userClass, levels=c("prod", "batch", "free")))
   
   return(res)
 }
 
 Main <- function(argv) {
-  input.res.files <- argv
+  opts <- arg_parser("Options for capacity planning analysis")
+  
+  opts <- add_argument(opts, "--input-stats-file",
+                       help = "Specify a summarized input statistics previously calculated \
+                               and saved. This avoids re-loading a large amount of simulation \
+                               results and calculating statistics for every capacity planning \
+                               analysis. By default, it is saved in output/cp_input_stats.csv \
+                               when running the analysis for the first time.", default = NA,
+                       short = "-i")
+  
+  opts <- add_argument(opts, "--results-sim-files",
+                       help = "List of admission control simulation results files. \
+                               By default, it is in the output/ directory, with the file name \
+                               having a res_ prefix and a _ac.csv suffix.", nargs = Inf,
+                       default = NA,
+                       short = "-r")
+  
+  opts <- add_argument(opts, "--sensibility-factors",
+                       help = "Sensibility analysis factors, which are applied as a relative error \
+                               in the estimation of input parameters used in the capacity planning \
+                               model.", nargs = Inf, default = 1, short = "-s")
+  
+  opts <- add_argument(opts, "--output-file",
+                       help = "Name of the capacity planning results output file.",
+                       default = "output/cp_results.csv", short = "-o")
+  
+  # assign the options to variable
+  params <- parse_args(opts, argv)
+  
+  #input.res.files <- argv
   #input.res.files <- list.files("output", "res_forecast-ets-quota_ccf-10_clf-1_mcf-1_mlf-.*_slo-1_cmem-TRUE.*_ac.csv", full.names = T)
   #input.res.files <- c(input.res.files, "output/res_greedy-norejection_ccf-Inf_clf-1_mcf-Inf_mlf-1_slo-1_cmem-TRUE_ac.csv")
-  output.file <- "output/cp_results.csv"
+  #output.file <- "output/cp_results.csv"
   
-  tasks <- LoadTaskEvents("data/gtrace_data.sqlite3", from.sqlite=T)
-  capacity <- LoadTotalCapacity("data/gtrace_total_capacity.txt")
-  
-  results <- ExecuteCapacityPlanning(tasks, capacity, input.res.files)
-  
-  write.table(results, output.file, quote = F, col.names = T, row.names = F, sep = ",")
+  if (!is.na(params$input_stats_file)) {
+    input.stats <- read.csv(params$input_stats_file)
+  } else {
+    tasks <- LoadTaskEvents("data/gtrace_data.sqlite3", from.sqlite=T)
+    stats.tasks <- LoadTaskStatistics(tasks, save.csv = T)
+    if (!is.na(params$results_sim_files)) {
+      sim.res.files <- params$results_sim_files
+    } else {
+      sim.res.files <- list.files("output", "res_.*_ac.csv", full.names = T)
+    }
+    input.stats <- LoadModelInputData(stats.tasks, sim.res.files, save.csv = T)
+  }
+  cp.results <- ExecuteCapacityPlanning(input.stats,
+                                        sensibility.factors = as.numeric(params$sensibility_factors))
+  write.table(cp.results, params$output_file, quote = F, col.names = T, row.names = F, sep = ",")
 }
 
 # Read command-line arguments
