@@ -276,7 +276,7 @@ UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpu
   arrivals <- tasks %>%
               filter(between(submitTime, (t-1)*interval.size + 1, t*interval.size),
                      runtime > 0, cpuReq > 0) %>%
-              select(userClass, jobId = jid, taskid = tid, priority, schedulingClass, submitTime,
+              select(userClass, jobId = jid, taskId = tid, priority, schedulingClass, submitTime,
                      runtime, endTime, cpuReq, memReq) %>%
               collect(n = Inf) %>%
               transmute(userClass = factor(DefineUserClass(priority, schedulingClass),
