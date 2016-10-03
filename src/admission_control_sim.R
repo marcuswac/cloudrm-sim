@@ -262,7 +262,7 @@ GreedyRejectionAllocation <- function(t, state, name="greedy-reject", consider.m
 # Calculates VM availability statistics for the VM departures (i.e., finished)
 CalculateVmAvailability <- function(departures, time, out.file) {
   vm.availability <- with(departures,
-                          data_frame(userClass, cpuReq, memReq, runtime, 
+                          data_frame(userClass, jobId, taskId, cpuReq, memReq, runtime, 
                                      elapsedTime=(time-submitTime), 
                                      availability=runtime/elapsedTime))
   return(vm.availability)
@@ -276,11 +276,12 @@ UpdateDemand <- function(t, tasks, state, bundle=T, interval.size=300000000, cpu
   arrivals <- tasks %>%
               filter(between(submitTime, (t-1)*interval.size + 1, t*interval.size),
                      runtime > 0, cpuReq > 0) %>%
-              select(userClass, priority, schedulingClass, submitTime, runtime, endTime, cpuReq,
-                     memReq) %>%
+              select(userClass, jobId = jid, taskid = tid, priority, schedulingClass, submitTime,
+                     runtime, endTime, cpuReq, memReq) %>%
               collect(n = Inf) %>%
               transmute(userClass = factor(DefineUserClass(priority, schedulingClass),
                                            levels=USER_CLASSES),
+                        jobId, taskId,
                         submitTime = DefineTimeIntervals(submitTime, interval.size),
                         serviceDemand = ifelse(endTime != -1,
                                                DefineTimeIntervals(runtime, interval.size), Inf),
