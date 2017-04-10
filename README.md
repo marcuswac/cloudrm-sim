@@ -1,4 +1,4 @@
-#cloudrm-sim
+# cloudrm-sim
 
 Cloud resource management simulator
 
@@ -11,7 +11,7 @@ Cloud resource management simulator
 
 Clone the repository to your local machine:
 
-````
+```
 git clone https://github.com/marcuswac/cloudrm-sim.git
 ```
 
